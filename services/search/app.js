@@ -1,9 +1,12 @@
 const express = require('express');
 const app = express();
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.get('/search', (req, res) => {
   const city = req.query.city || "unknown";
-
   res.json([
     { hotel: "Taj", city, price: 5000 },
     { hotel: "Oyo", city, price: 1500 }
