@@ -356,6 +356,7 @@ jobs:
       - name: Verify dev deployment
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+          kubectl apply -f k8s/dev/
           kubectl rollout status deployment/frontend -n dev --timeout=120s
           kubectl rollout status deployment/reservation -n dev --timeout=120s
           kubectl rollout status deployment/search -n dev --timeout=120s
@@ -406,6 +407,7 @@ jobs:
       - name: Verify prod deployment
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+          kubectl apply -f k8s/prod/
           kubectl rollout status deployment/frontend -n prod --timeout=180s
           kubectl rollout status deployment/reservation -n prod --timeout=180s
           kubectl rollout status deployment/search -n prod --timeout=180s
