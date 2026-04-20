@@ -83,13 +83,13 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 3001
             initialDelaySeconds: 10
             periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 3001
             initialDelaySeconds: 15
             periodSeconds: 10
@@ -131,13 +131,13 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /search
+              path: /health
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /search
+              path: /health
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 10
@@ -179,13 +179,13 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 3002
             initialDelaySeconds: 10
             periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 3002
             initialDelaySeconds: 15
             periodSeconds: 10

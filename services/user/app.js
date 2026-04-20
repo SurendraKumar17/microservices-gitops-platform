@@ -3,9 +3,12 @@ const app = express();
 
 app.use(express.json());
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.post('/login', (req, res) => {
   const { username } = req.body;
-
   res.json({
     token: "fake-jwt-token",
     user: username
