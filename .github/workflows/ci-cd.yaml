@@ -1,0 +1,426 @@
+name: Production CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, "release/*", "hotfix/*" ]
+  pull_request:
+    branches: [ main, develop ]
+    types: [ opened, synchronize, reopened ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 635457411372.dkr.ecr.us-east-1.amazonaws.com
+  EKS_CLUSTER: dev-eks
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ─────────────────────────────────────────────────
+  # JOB 1: PR VALIDATION — runs only on pull requests
+  # ─────────────────────────────────────────────────
+  pr-validation:
+    name: PR Validation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate k8s manifests (dry-run)
+        run: |
+          curl -sSLo /usr/local/bin/kubectl \
+            https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl
+          chmod +x /usr/local/bin/kubectl
+          kubectl apply --dry-run=client -f k8s/dev/
+          kubectl apply --dry-run=client -f k8s/prod/
+
+      - name: Lint Dockerfiles
+        run: |
+          for svc in reservation frontend search user; do
+            echo "Linting services/$svc/Dockerfile"
+            docker run --rm -i hadolint/hadolint < services/$svc/Dockerfile || true
+          done
+
+      - name: Scan for secrets in code
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+
+      - name: PR Summary
+        run: echo "✅ PR validation passed"
+
+  # ─────────────────────────────────────────────────
+  # JOB 2: DETECT CHANGES — only build what changed
+  # ─────────────────────────────────────────────────
+  detect-changes:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    outputs:
+      reservation: ${{ steps.changes.outputs.reservation }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+      search: ${{ steps.changes.outputs.search }}
+      user: ${{ steps.changes.outputs.user }}
+      any_service: ${{ steps.changes.outputs.any_service }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changes
+        id: changes
+        run: |
+          changed() {
+            git diff --name-only HEAD~1 HEAD | grep -q "^services/$1/" && echo "true" || echo "false"
+          }
+          RESERVATION=$(changed reservation)
+          FRONTEND=$(changed frontend)
+          SEARCH=$(changed search)
+          USER=$(changed user)
+          echo "reservation=$RESERVATION" >> $GITHUB_OUTPUT
+          echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
+          echo "search=$SEARCH" >> $GITHUB_OUTPUT
+          echo "user=$USER" >> $GITHUB_OUTPUT
+          # any service changed?
+          if [ "$RESERVATION" = "true" ] || [ "$FRONTEND" = "true" ] || [ "$SEARCH" = "true" ] || [ "$USER" = "true" ]; then
+            echo "any_service=true" >> $GITHUB_OUTPUT
+          else
+            echo "any_service=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ─────────────────────────────────────────────────
+  # JOB 3: BUILD & SCAN — parallel per service
+  # ─────────────────────────────────────────────────
+  build-reservation:
+    name: Build & Scan — Reservation
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.reservation == 'true' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: meta
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          BRANCH=$(echo ${{ github.ref_name }} | sed 's/\//-/g')
+          echo "tag=${BRANCH}-${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/reservation
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/reservation:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=reservation
+          cache-to: type=gha,scope=reservation,mode=max
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/reservation:${{ steps.meta.outputs.tag }}
+          format: sarif
+          output: trivy-reservation.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Upload scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-reservation.sarif
+          category: trivy-reservation
+
+  build-frontend:
+    name: Build & Scan — Frontend
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: meta
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          BRANCH=$(echo ${{ github.ref_name }} | sed 's/\//-/g')
+          echo "tag=${BRANCH}-${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/frontend
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/frontend:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/frontend:${{ steps.meta.outputs.tag }}
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Upload scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-frontend.sarif
+          category: trivy-frontend
+
+  build-search:
+    name: Build & Scan — Search
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.search == 'true' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: meta
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          BRANCH=$(echo ${{ github.ref_name }} | sed 's/\//-/g')
+          echo "tag=${BRANCH}-${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/search
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/search:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=search
+          cache-to: type=gha,scope=search,mode=max
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/search:${{ steps.meta.outputs.tag }}
+          format: sarif
+          output: trivy-search.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Upload scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-search.sarif
+          category: trivy-search
+
+  build-user:
+    name: Build & Scan — User
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.user == 'true' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: meta
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          BRANCH=$(echo ${{ github.ref_name }} | sed 's/\//-/g')
+          echo "tag=${BRANCH}-${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/user
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/user:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=user
+          cache-to: type=gha,scope=user,mode=max
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/user:${{ steps.meta.outputs.tag }}
+          format: sarif
+          output: trivy-user.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Upload scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-user.sarif
+          category: trivy-user
+
+  # ─────────────────────────────────────────────────
+  # JOB 4: DEPLOY TO DEV — develop branch only
+  # ─────────────────────────────────────────────────
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: [ build-reservation, build-frontend, build-search, build-user ]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/develop' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
+    environment: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update dev image tags
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          TAG="develop-${SHA}"
+          ECR="${{ env.ECR_REGISTRY }}"
+          sed -i "s|image: ${ECR}/reservation:.*|image: ${ECR}/reservation:${TAG}|g" k8s/dev/deployments.yaml
+          sed -i "s|image: ${ECR}/frontend:.*|image: ${ECR}/frontend:${TAG}|g" k8s/dev/deployments.yaml
+          sed -i "s|image: ${ECR}/search:.*|image: ${ECR}/search:${TAG}|g" k8s/dev/deployments.yaml
+          sed -i "s|image: ${ECR}/user:.*|image: ${ECR}/user:${TAG}|g" k8s/dev/deployments.yaml
+
+      - name: Commit updated dev manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/dev/deployments.yaml
+          git diff --staged --quiet || git commit -m "ci(dev): update images to develop-$(echo ${{ github.sha }} | cut -c1-8) [skip ci]"
+          git push
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify dev deployment
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+          kubectl rollout status deployment/frontend -n dev --timeout=120s
+          kubectl rollout status deployment/reservation -n dev --timeout=120s
+          kubectl rollout status deployment/search -n dev --timeout=120s
+          kubectl rollout status deployment/user -n dev --timeout=120s
+          echo "✅ Dev deployment healthy"
+          kubectl get pods -n dev
+
+  # ─────────────────────────────────────────────────
+  # JOB 5: DEPLOY TO PROD — main branch only
+  # ─────────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy to Prod
+    runs-on: ubuntu-latest
+    needs: [ build-reservation, build-frontend, build-search, build-user ]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
+    environment: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update prod image tags
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          TAG="main-${SHA}"
+          ECR="${{ env.ECR_REGISTRY }}"
+          sed -i "s|image: ${ECR}/reservation:.*|image: ${ECR}/reservation:${TAG}|g" k8s/prod/deployments.yaml
+          sed -i "s|image: ${ECR}/frontend:.*|image: ${ECR}/frontend:${TAG}|g" k8s/prod/deployments.yaml
+          sed -i "s|image: ${ECR}/search:.*|image: ${ECR}/search:${TAG}|g" k8s/prod/deployments.yaml
+          sed -i "s|image: ${ECR}/user:.*|image: ${ECR}/user:${TAG}|g" k8s/prod/deployments.yaml
+
+      - name: Commit updated prod manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/prod/deployments.yaml
+          git diff --staged --quiet || git commit -m "ci(prod): update images to main-$(echo ${{ github.sha }} | cut -c1-8) [skip ci]"
+          git push
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify prod deployment
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+          kubectl rollout status deployment/frontend -n prod --timeout=180s
+          kubectl rollout status deployment/reservation -n prod --timeout=180s
+          kubectl rollout status deployment/search -n prod --timeout=180s
+          kubectl rollout status deployment/user -n prod --timeout=180s
+          echo "✅ Prod deployment healthy"
+          kubectl get pods -n prod
