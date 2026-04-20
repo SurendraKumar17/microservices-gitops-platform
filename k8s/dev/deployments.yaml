@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/frontend:develop-772597ae
+          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/frontend:develop-0b338d54
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -67,7 +67,7 @@ spec:
     spec:
       containers:
         - name: reservation
-          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/reservation:develop-772597ae
+          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/reservation:develop-0b338d54
           imagePullPolicy: Always
           ports:
             - containerPort: 3001
@@ -115,7 +115,7 @@ spec:
     spec:
       containers:
         - name: search
-          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/search:develop-772597ae
+          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/search:develop-0b338d54
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -163,7 +163,7 @@ spec:
     spec:
       containers:
         - name: user
-          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/user:develop-772597ae
+          image: 635457411372.dkr.ecr.us-east-1.amazonaws.com/user:develop-0b338d54
           imagePullPolicy: Always
           ports:
             - containerPort: 3002
