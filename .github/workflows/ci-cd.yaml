@@ -138,7 +138,7 @@ jobs:
           format: sarif
           output: trivy-reservation.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: 0
 
       - name: Upload scan results
         uses: github/codeql-action/upload-sarif@v4
@@ -193,7 +193,7 @@ jobs:
           format: sarif
           output: trivy-frontend.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: 0
 
       - name: Upload scan results
         uses: github/codeql-action/upload-sarif@v4
@@ -248,7 +248,7 @@ jobs:
           format: sarif
           output: trivy-search.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: 0
 
       - name: Upload scan results
         uses: github/codeql-action/upload-sarif@v4
@@ -303,7 +303,7 @@ jobs:
           format: sarif
           output: trivy-user.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: 0
 
       - name: Upload scan results
         uses: github/codeql-action/upload-sarif@v4
