@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-reservation
+  labels:
+    {{- include "booking.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.reservation.replicas }}
+  selector:
+    matchLabels:
+      app: reservation
+  template:
+    metadata:
+      labels:
+        app: reservation
+    spec:
+      containers:
+      - name: reservation
+        image: {{ .Values.image.repository }}/reservation:{{ .Values.image.tag }}
+        ports:
+        - containerPort: 3001
+
+        imagePullPolicy: Always
+
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 5
