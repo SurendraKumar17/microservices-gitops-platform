@@ -1,11 +1,19 @@
-# Terraform
-.terraform/
+# Terraform state files — never push these
 *.tfstate
 *.tfstate.backup
+.terraform/
+.terraform.lock.hcl
 
-# Terraform lock (optional to keep)
-# .terraform.lock.hcl
+# Sensitive variable files
+*.tfvars
+*.tfvars.json
 
-# OS
-.DS_Store
-Thumbs.db
+# Crash logs
+crash.log
+
+# Override files
+override.tf
+override.tf.json
+
+# Local scripts output
+*.log
