@@ -1,6 +1,9 @@
-variable "region" {}
-variable "cidr" {}
+variable "region"      {}
+variable "cidr"        {}
+variable "env"         {}
 variable "azs" {
   type = list(string)
 }
-variable "env" {}
+variable "project" {
+  default = "microservices"
+}

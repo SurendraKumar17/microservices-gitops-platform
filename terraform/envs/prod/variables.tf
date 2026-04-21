@@ -3,11 +3,11 @@ variable "region" {
 }
 
 variable "cluster_name" {
-  default = "dev-eks-cluster"
+  default = "prod-eks-cluster"
 }
 
 variable "vpc_cidr" {
-  default = "10.0.0.0/16"
+  default = "10.1.0.0/16"
 }
 
 variable "azs" {
@@ -15,9 +15,9 @@ variable "azs" {
 }
 
 variable "private_subnets" {
-  default = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  default = ["10.1.1.0/24", "10.1.2.0/24", "10.1.3.0/24"]
 }
 
 variable "public_subnets" {
-  default = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+  default = ["10.1.101.0/24", "10.1.102.0/24", "10.1.103.0/24"]
 }
