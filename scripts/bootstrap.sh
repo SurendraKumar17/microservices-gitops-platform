@@ -13,9 +13,9 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 err()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 # Verify required tools
-command -v aws     >/dev/null 2>&1 || err "aws cli not installed"
-command -v kubectl >/dev/null 2>&1 || err "kubectl not installed"
-command -v helm    >/dev/null 2>&1 || err "helm not installed"
+command -v aws       >/dev/null 2>&1 || err "aws cli not installed"
+command -v kubectl   >/dev/null 2>&1 || err "kubectl not installed"
+command -v helm      >/dev/null 2>&1 || err "helm not installed"
 command -v terraform >/dev/null 2>&1 || err "terraform not installed"
 
 # ── Read from Terraform outputs ──
@@ -42,7 +42,6 @@ kubectl get nodes || err "Cannot connect to cluster"
 # EC2 metadata service for IAM credentials
 # =============================================================
 log "Fixing IMDS hop limit on nodes..."
-
 INSTANCES=$(aws ec2 describe-instances \
   --filters \
     "Name=tag:eks:cluster-name,Values=${CLUSTER_NAME}" \
@@ -58,11 +57,34 @@ for i in $INSTANCES; do
     --region "$REGION" > /dev/null
   log "Fixed IMDS on $i"
 done
-
 log "IMDS hop limit fixed ✅"
 
 # =============================================================
-# STEP 2 — Install EKS Pod Identity Agent
+# STEP 2 — Tag public subnets for ALB discovery
+# Why: ALB controller needs subnets tagged with cluster name
+# and elb role to auto-discover them
+# =============================================================
+log "Tagging public subnets for ALB..."
+PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
+  --filters \
+    "Name=vpc-id,Values=${VPC_ID}" \
+    "Name=tag:Name,Values=*public*" \
+  --query 'Subnets[*].SubnetId' \
+  --output text)
+
+for subnet in $PUBLIC_SUBNETS; do
+  aws ec2 create-tags \
+    --resources "$subnet" \
+    --tags \
+      Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared \
+      Key=kubernetes.io/role/elb,Value=1 \
+    --region "$REGION"
+  log "Tagged subnet $subnet"
+done
+log "Subnets tagged ✅"
+
+# =============================================================
+# STEP 3 — Install EKS Pod Identity Agent
 # =============================================================
 log "Installing EKS Pod Identity Agent..."
 aws eks create-addon \
@@ -74,21 +96,19 @@ aws eks wait addon-active \
   --cluster-name "$CLUSTER_NAME" \
   --addon-name eks-pod-identity-agent \
   --region "$REGION"
-
 log "Pod Identity Agent ready ✅"
 
 # ── Add Helm repos ──
 log "Adding Helm repos..."
-helm repo add eks https://aws.github.io/eks-charts
-helm repo add argo https://argoproj.github.io/argo-helm
-helm repo add autoscaler https://kubernetes.github.io/autoscaler
-helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server
-helm repo add ebs-csi https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true
+helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+helm repo add autoscaler https://kubernetes.github.io/autoscaler 2>/dev/null || true
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server 2>/dev/null || true
+helm repo add ebs-csi https://kubernetes-sigs.github.io/aws-ebs-csi-driver 2>/dev/null || true
 helm repo update
 
-# ── Attach ALB policy to node role ──
-# Why: Simplest and most reliable credential method
-log "Attaching ALB policy to node role..."
+# ── Get node role and attach policies ──
+log "Attaching policies to node role..."
 NODE_ROLE=$(aws eks describe-nodegroup \
   --cluster-name "$CLUSTER_NAME" \
   --nodegroup-name "${CLUSTER_NAME}-nodes" \
@@ -98,12 +118,17 @@ NODE_ROLE=$(aws eks describe-nodegroup \
 aws iam attach-role-policy \
   --role-name "$NODE_ROLE" \
   --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${CLUSTER_NAME}-alb-controller-policy" \
-  2>/dev/null || log "Policy already attached"
+  2>/dev/null || log "ALB policy already attached"
 
-log "Node role policy attached ✅"
+aws iam attach-role-policy \
+  --role-name "$NODE_ROLE" \
+  --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy" \
+  2>/dev/null || log "EBS policy already attached"
+
+log "Node role policies attached ✅"
 
 # =============================================================
-# STEP 3 — ALB Controller
+# STEP 4 — ALB Controller
 # =============================================================
 log "Installing ALB Controller..."
 
@@ -121,7 +146,6 @@ helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   --set replicaCount=1 \
   --wait --timeout=5m
 
-log "Waiting for ALB Controller to be ready..."
 kubectl wait --for=condition=ready pod \
   -l app.kubernetes.io/name=aws-load-balancer-controller \
   -n kube-system --timeout=120s
@@ -129,14 +153,12 @@ kubectl wait --for=condition=ready pod \
 log "ALB Controller ready ✅"
 
 # =============================================================
-# STEP 4 — EBS CSI Driver
+# STEP 5 — EBS CSI Driver
 # =============================================================
 log "Installing EBS CSI Driver..."
 
-aws iam attach-role-policy \
-  --role-name "$NODE_ROLE" \
-  --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy" \
-  2>/dev/null || log "EBS policy already attached"
+# Clean up old service account if exists
+kubectl delete sa ebs-csi-controller-sa -n kube-system 2>/dev/null || true
 
 helm upgrade --install aws-ebs-csi-driver ebs-csi/aws-ebs-csi-driver \
   -n kube-system \
@@ -145,7 +167,7 @@ helm upgrade --install aws-ebs-csi-driver ebs-csi/aws-ebs-csi-driver \
 log "EBS CSI Driver ready ✅"
 
 # =============================================================
-# STEP 5 — Metrics Server
+# STEP 6 — Metrics Server
 # =============================================================
 log "Installing Metrics Server..."
 
@@ -156,7 +178,7 @@ helm upgrade --install metrics-server metrics-server/metrics-server \
 log "Metrics Server ready ✅"
 
 # =============================================================
-# STEP 6 — Cluster Autoscaler
+# STEP 7 — Cluster Autoscaler
 # =============================================================
 log "Installing Cluster Autoscaler..."
 
@@ -169,11 +191,15 @@ helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
 log "Cluster Autoscaler ready ✅"
 
 # =============================================================
-# STEP 7 — ArgoCD
+# STEP 8 — ArgoCD
 # =============================================================
 log "Installing ArgoCD..."
 
-kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+# Force delete stuck namespace if exists
+kubectl delete namespace argocd --force --grace-period=0 2>/dev/null || true
+sleep 10
+
+kubectl create namespace argocd
 
 helm upgrade --install argocd argo/argo-cd \
   -n argocd \
@@ -189,7 +215,7 @@ ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d)
 
 # =============================================================
-# STEP 8 — ArgoCD Ingress
+# STEP 9 — ArgoCD Ingress
 # =============================================================
 log "Creating ArgoCD Ingress..."
 
@@ -234,7 +260,7 @@ done
 log "ArgoCD Ingress ready ✅"
 
 # =============================================================
-# STEP 9 — Register microservices with ArgoCD
+# STEP 10 — Register microservices with ArgoCD
 # =============================================================
 log "Registering apps with ArgoCD..."
 
@@ -275,9 +301,12 @@ echo ""
 echo "================================================"
 echo "  BOOTSTRAP COMPLETE"
 echo "================================================"
-echo "  ArgoCD UI : http://${ARGOCD_URL}"
+echo "  ArgoCD UI : http://${ARGOCD_URL:-use port-forward}"
 echo "  Username  : admin"
 echo "  Password  : ${ARGOCD_PASS}"
+echo ""
+echo "  Port-forward: kubectl port-forward svc/argocd-server -n argocd 8080:80"
+echo "  Then open  : http://localhost:8080"
 echo ""
 echo "  Next: Merge develop → main for prod deploy"
 echo "================================================"
