@@ -8,6 +8,12 @@
 # =============================================================
 set -euo pipefail
 
+# Verify required tools
+command -v aws >/dev/null || err "aws cli not installed"
+command -v kubectl >/dev/null || err "kubectl not installed"
+command -v helm >/dev/null || err "helm not installed"
+command -v terraform >/dev/null || err "terraform not installed"
+
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
@@ -80,7 +86,7 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --set region="$REGION" \
   --set vpcId=$(terraform -chdir=$TERRAFORM_DIR output -raw vpc_id) \
   --set replicaCount=1 \
-  --atomic \
+  --rollback-on-failure \
   --wait --timeout=5m
 
 log "Waiting for ALB Controller to be ready..."
@@ -112,7 +118,7 @@ helm upgrade --install aws-ebs-csi-driver ebs-csi/aws-ebs-csi-driver \
   -n kube-system \
   --set controller.serviceAccount.create=false \
   --set controller.serviceAccount.name=ebs-csi-controller-sa \
-  --atomic \
+  --rollback-on-failure \
   --wait --timeout=5m
 
 log "EBS CSI Driver ready ✅"
@@ -125,7 +131,7 @@ log "Installing Metrics Server..."
 
 helm upgrade --install metrics-server metrics-server/metrics-server \
   -n kube-system \
-  --atomic \
+  --rollback-on-failure \
   --wait --timeout=3m
 
 log "Metrics Server ready ✅"
@@ -140,7 +146,7 @@ helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   -n kube-system \
   --set autoDiscovery.clusterName="$CLUSTER_NAME" \
   --set awsRegion="$REGION" \
-  --atomic \
+  --rollback-on-failure \
   --wait --timeout=5m
 
 log "Cluster Autoscaler ready ✅"
@@ -167,12 +173,11 @@ helm upgrade --install argocd argo/argo-cd \
   -n argocd \
   --set server.service.type=ClusterIP \
   --set configs.params."server\.insecure"=true \
-  --set server.replicas=2 \
-  --set repoServer.replicas=2 \
+  --set server.replicas=1 \
+  --set repoServer.replicas=1 \
   --set serviceAccount.create=false \
   --set serviceAccount.name=argocd-server \
-  --atomic \
-  --wait --timeout=10m
+  --wait --timeout=15m
 
 log "ArgoCD ready ✅"
 
