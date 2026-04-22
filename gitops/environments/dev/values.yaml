@@ -3,10 +3,10 @@ global:
   env: dev
 
 frontend:
-  tag: dev-e140757a
+  tag: dev-cecba714
 reservation:
-  tag: dev-e140757a
+  tag: dev-cecba714
 search:
-  tag: dev-e140757a
+  tag: dev-cecba714
 user:
-  tag: dev-e140757a
+  tag: dev-cecba714
