@@ -226,34 +226,11 @@ jobs:
 
       - name: Apply ArgoCD Application
         run: |
-          kubectl cluster-info  # debug: confirm cluster is reachable
-          kubectl apply --validate=false -f - <<EOF
-          apiVersion: argoproj.io/v1alpha1
-          kind: Application
-          metadata:
-            name: ${{ env.APP_NAME }}
-            namespace: argocd
-            finalizers:
-              - resources-finalizer.argocd.argoproj.io
-          spec:
-            project: default
-            source:
-              repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
-              targetRevision: ${{ env.TARGET_REVISION }}
-              path: helm/booking-app
-              helm:
-                valueFiles:
-                  - ../../gitops/environments/${{ env.ENV }}/values.yaml
-            destination:
-              server: https://kubernetes.default.svc
-              namespace: ${{ env.TARGET_NS }}
-            syncPolicy:
-              automated:
-                prune: true
-                selfHeal: true
-              syncOptions:
-                - CreateNamespace=true
-          EOF
+          sed -e "s/PLACEHOLDER_APP_NAME/${{ env.APP_NAME }}/g" \
+              -e "s/PLACEHOLDER_REVISION/${{ env.TARGET_REVISION }}/g" \
+              -e "s/PLACEHOLDER_ENV/${{ env.ENV }}/g" \
+              -e "s/PLACEHOLDER_NS/${{ env.TARGET_NS }}/g" \
+              .github/argocd-app.yaml | kubectl apply --validate=false -f -
 
       - name: Get ArgoCD credentials
         run: |
