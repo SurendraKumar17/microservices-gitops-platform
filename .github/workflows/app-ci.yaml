@@ -101,7 +101,6 @@ jobs:
             search)      echo "changed=${{ needs.detect-changes.outputs.search }}"      >> $GITHUB_OUTPUT ;;
             user)        echo "changed=${{ needs.detect-changes.outputs.user }}"        >> $GITHUB_OUTPUT ;;
           esac
-          # workflow_dispatch always builds all
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
@@ -117,11 +116,10 @@ jobs:
           fi
 
       - name: Configure AWS (OIDC)
-        if: steps.check.outputs.changed == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::635457411372:role/github-actions-ecr-role
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Login to ECR
         if: steps.check.outputs.changed == 'true'
@@ -179,7 +177,6 @@ jobs:
 
   # ─────────────────────────────────────────
   # CD — Apply ArgoCD app + sync + verify
-  # Zero terminal interaction required
   # ─────────────────────────────────────────
   deploy:
     runs-on: ubuntu-latest
@@ -213,7 +210,6 @@ jobs:
             --name ${{ secrets.EKS_CLUSTER_NAME }}
           echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
 
-          
       - name: Set environment
         run: |
           if [[ "${GITHUB_REF##*/}" == "main" ]]; then
@@ -230,7 +226,7 @@ jobs:
 
       - name: Apply ArgoCD Application
         run: |
-          kubectl apply -f - <<EOF
+          kubectl apply -f - --validate=false <<EOF
           apiVersion: argoproj.io/v1alpha1
           kind: Application
           metadata:
