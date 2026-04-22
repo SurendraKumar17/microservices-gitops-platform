@@ -3,10 +3,10 @@ global:
   env: dev
 
 frontend:
-  tag: dev-9414c86c
+  tag: dev-5e90cbca
 reservation:
-  tag: dev-9414c86c
+  tag: dev-5e90cbca
 search:
-  tag: dev-9414c86c
+  tag: dev-5e90cbca
 user:
-  tag: dev-9414c86c
+  tag: dev-5e90cbca
