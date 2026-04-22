@@ -211,7 +211,9 @@ jobs:
           aws eks update-kubeconfig \
             --region us-east-1 \
             --name ${{ secrets.EKS_CLUSTER_NAME }}
+          echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
 
+          
       - name: Set environment
         run: |
           if [[ "${GITHUB_REF##*/}" == "main" ]]; then
