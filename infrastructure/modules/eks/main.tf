@@ -1,7 +1,3 @@
-provider "aws" {
-  region = var.region
-}
-
 locals {
   tags = {
     Environment = var.env
@@ -46,7 +42,6 @@ resource "aws_eks_cluster" "main" {
     endpoint_public_access  = true
   }
 
-  # Production: enable all control plane logs
   enabled_cluster_log_types = [
     "api", "audit", "authenticator",
     "controllerManager", "scheduler"
@@ -58,8 +53,6 @@ resource "aws_eks_cluster" "main" {
 
 # ────────────────────────────────────────────────
 # OIDC Provider
-# Why: Required for IRSA. Lets pods assume IAM roles
-# securely without storing AWS keys anywhere.
 # ────────────────────────────────────────────────
 data "tls_certificate" "eks" {
   url = aws_eks_cluster.main.identity[0].oidc[0].issuer
@@ -104,6 +97,24 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
 }
 
 # ────────────────────────────────────────────────
+# Launch Template
+# Why: Sets IMDS hop limit to 2 so pods running on
+# nodes can reach EC2 metadata service for IAM creds.
+# Default hop limit of 1 blocks pod-level IMDS access.
+# ────────────────────────────────────────────────
+resource "aws_launch_template" "nodes" {
+  name = "${var.cluster_name}-nodes"
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "optional"
+    http_put_response_hop_limit = 2
+  }
+
+  tags = local.tags
+}
+
+# ────────────────────────────────────────────────
 # Node Group
 # ────────────────────────────────────────────────
 resource "aws_eks_node_group" "main" {
@@ -113,13 +124,17 @@ resource "aws_eks_node_group" "main" {
   subnet_ids      = var.subnet_ids
   instance_types  = var.instance_types
 
+  launch_template {
+    name    = aws_launch_template.nodes.name
+    version = aws_launch_template.nodes.latest_version
+  }
+
   scaling_config {
     desired_size = var.desired_size
     max_size     = var.max_size
     min_size     = var.min_size
   }
 
-  # Zero-downtime rolling updates
   update_config {
     max_unavailable = 1
   }
@@ -139,9 +154,6 @@ resource "aws_eks_node_group" "main" {
 
 # ────────────────────────────────────────────────
 # EKS Managed Add-ons
-# Why: CoreDNS/kube-proxy/VPC-CNI are critical for
-# cluster networking. Managing via Terraform keeps
-# them version-controlled and auto-updated.
 # ────────────────────────────────────────────────
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.main.name

@@ -1,0 +1,306 @@
+name: Production GitOps CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'services/**'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'services/**'
+      - 'gitops/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, prod]
+
+permissions:
+  id-token: write
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+
+jobs:
+
+  # ─────────────────────────────────────────
+  # PR VALIDATION
+  # ─────────────────────────────────────────
+  pr-validation:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Dockerfiles
+        run: |
+          for svc in reservation frontend search user; do
+            docker run --rm -i hadolint/hadolint < services/$svc/Dockerfile || true
+          done
+
+      - name: Scan secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+
+  # ─────────────────────────────────────────
+  # DETECT CHANGES
+  # ─────────────────────────────────────────
+  detect-changes:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      reservation: ${{ steps.filter.outputs.reservation }}
+      frontend:    ${{ steps.filter.outputs.frontend }}
+      search:      ${{ steps.filter.outputs.search }}
+      user:        ${{ steps.filter.outputs.user }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            reservation: ['services/reservation/**']
+            frontend:    ['services/frontend/**']
+            search:      ['services/search/**']
+            user:        ['services/user/**']
+
+  # ─────────────────────────────────────────
+  # BUILD & PUSH
+  # ─────────────────────────────────────────
+  build:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [reservation, frontend, search, user]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check if service changed
+        id: check
+        run: |
+          case "${{ matrix.service }}" in
+            reservation) echo "changed=${{ needs.detect-changes.outputs.reservation }}" >> $GITHUB_OUTPUT ;;
+            frontend)    echo "changed=${{ needs.detect-changes.outputs.frontend }}"    >> $GITHUB_OUTPUT ;;
+            search)      echo "changed=${{ needs.detect-changes.outputs.search }}"      >> $GITHUB_OUTPUT ;;
+            user)        echo "changed=${{ needs.detect-changes.outputs.user }}"        >> $GITHUB_OUTPUT ;;
+          esac
+          # workflow_dispatch always builds all
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set image tag
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          SHA=$(echo $GITHUB_SHA | cut -c1-8)
+          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+            echo "TAG=prod-${SHA}" >> $GITHUB_ENV
+          else
+            echo "TAG=dev-${SHA}" >> $GITHUB_ENV
+          fi
+
+      - name: Configure AWS (OIDC)
+        if: steps.check.outputs.changed == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::635457411372:role/github-actions-ecr-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        if: steps.check.outputs.changed == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/${{ matrix.service }}:$TAG \
+            ./services/${{ matrix.service }}
+          docker push $ECR_REGISTRY/${{ matrix.service }}:$TAG
+
+      - name: Trivy Scan
+        if: steps.check.outputs.changed == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/${{ matrix.service }}:${{ env.TAG }}
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+  # ─────────────────────────────────────────
+  # GITOPS UPDATE
+  # ─────────────────────────────────────────
+  gitops-update:
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      !contains(needs.*.result, 'failure')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set env + tag
+        run: |
+          SHA=$(echo $GITHUB_SHA | cut -c1-8)
+          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+            echo "TAG=prod-${SHA}" >> $GITHUB_ENV
+          else
+            echo "ENV=dev" >> $GITHUB_ENV
+            echo "TAG=dev-${SHA}" >> $GITHUB_ENV
+          fi
+
+      - name: Update GitOps values
+        run: |
+          sed -i "s/tag:.*/tag: $TAG/" gitops/environments/$ENV/values.yaml
+
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git commit -am "gitops: update $ENV image tag to $TAG [skip ci]" || echo "No changes"
+          git push
+
+  # ─────────────────────────────────────────
+  # CD — Apply ArgoCD app + sync + verify
+  # Zero terminal interaction required
+  # ─────────────────────────────────────────
+  deploy:
+    runs-on: ubuntu-latest
+    needs: gitops-update
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      !contains(needs.*.result, 'failure')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::635457411372:role/github-actions-ecr-role
+          aws-region: us-east-1
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd \
+            https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region us-east-1 \
+            --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+      - name: Set environment
+        run: |
+          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+            echo "APP_NAME=microservices-prod" >> $GITHUB_ENV
+            echo "TARGET_REVISION=main" >> $GITHUB_ENV
+            echo "TARGET_NS=prod" >> $GITHUB_ENV
+          else
+            echo "ENV=dev" >> $GITHUB_ENV
+            echo "APP_NAME=microservices-dev" >> $GITHUB_ENV
+            echo "TARGET_REVISION=develop" >> $GITHUB_ENV
+            echo "TARGET_NS=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Apply ArgoCD Application
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: ${{ env.APP_NAME }}
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
+              targetRevision: ${{ env.TARGET_REVISION }}
+              path: helm/booking-app
+              helm:
+                valueFiles:
+                  - ../../gitops/environments/${{ env.ENV }}/values.yaml
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: ${{ env.TARGET_NS }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+          EOF
+
+      - name: Get ArgoCD credentials
+        run: |
+          ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret \
+            -o jsonpath="{.data.password}" | base64 -d)
+          ARGOCD_URL=$(kubectl get ingress argocd-ingress -n argocd \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "ARGOCD_PASS=$ARGOCD_PASS" >> $GITHUB_ENV
+          echo "ARGOCD_URL=$ARGOCD_URL" >> $GITHUB_ENV
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ env.ARGOCD_URL }} \
+            --username admin \
+            --password ${{ env.ARGOCD_PASS }} \
+            --insecure
+
+      - name: Sync ArgoCD app
+        run: |
+          argocd app sync ${{ env.APP_NAME }} --force
+
+      - name: Wait for healthy deployment
+        run: |
+          argocd app wait ${{ env.APP_NAME }} \
+            --health \
+            --timeout 300
+
+      - name: Verify pods
+        run: |
+          kubectl get pods -n ${{ env.TARGET_NS }}
+          kubectl rollout status deployment \
+            -n ${{ env.TARGET_NS }} \
+            --timeout=120s
+
+      - name: Print deployment summary
+        run: |
+          echo "============================================"
+          echo "  DEPLOYMENT COMPLETE ✅"
+          echo "  Environment : ${{ env.ENV }}"
+          echo "  Namespace   : ${{ env.TARGET_NS }}"
+          echo "============================================"
+          echo ""
+          echo "  ArgoCD UI:"
+          echo "  http://${{ env.ARGOCD_URL }}"
+          echo ""
+          echo "  Services:"
+          kubectl get ingress -n ${{ env.TARGET_NS }} 2>/dev/null || \
+            kubectl get svc -n ${{ env.TARGET_NS }}
+          echo "============================================"

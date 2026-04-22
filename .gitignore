@@ -17,3 +17,5 @@ override.tf.json
 
 # Local scripts output
 *.log
+*.tfstate
+*.tfstate.backup
