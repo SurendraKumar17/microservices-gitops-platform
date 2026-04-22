@@ -226,7 +226,8 @@ jobs:
 
       - name: Apply ArgoCD Application
         run: |
-          kubectl apply -f - --validate=false <<EOF
+          kubectl cluster-info  # debug: confirm cluster is reachable
+          kubectl apply --validate=false -f - <<EOF
           apiVersion: argoproj.io/v1alpha1
           kind: Application
           metadata:
