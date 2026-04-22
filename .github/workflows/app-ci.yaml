@@ -230,7 +230,7 @@ jobs:
               -e "s/PLACEHOLDER_REVISION/${{ env.TARGET_REVISION }}/g" \
               -e "s/PLACEHOLDER_ENV/${{ env.ENV }}/g" \
               -e "s/PLACEHOLDER_NS/${{ env.TARGET_NS }}/g" \
-              .github/argocd-app.yaml | kubectl apply --validate=false -f -
+              gitops/argocd-app.yaml | kubectl apply --validate=false -f -
 
       - name: Get ArgoCD credentials
         run: |
