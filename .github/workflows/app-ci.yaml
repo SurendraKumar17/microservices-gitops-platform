@@ -79,7 +79,7 @@ jobs:
             user:        ['services/user/**']
 
   # ─────────────────────────────────────────
-  # BUILD & PUSH (ONLY CHANGED SERVICES)
+  # BUILD & PUSH
   # ─────────────────────────────────────────
   build:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -145,7 +145,7 @@ jobs:
           exit-code: 0
 
   # ─────────────────────────────────────────
-  # GITOPS UPDATE (SAFE + CORRECT)
+  # GITOPS UPDATE
   # ─────────────────────────────────────────
   gitops-update:
     runs-on: ubuntu-latest
@@ -173,31 +173,32 @@ jobs:
             echo "TAG=dev-${SHA}" >> $GITHUB_ENV
           fi
 
-      - name: Update GitOps values (only changed services)
+      - name: Update GitOps values
         run: |
           FILE=gitops/environments/$ENV/values.yaml
 
-          if [[ "${{ needs.detect-changes.outputs.frontend }}" == "true" ]]; then
-            yq -i ".frontend.tag = \"$TAG\"" $FILE
-          fi
+          update () {
+            SERVICE=$1
+            CHANGED=$2
 
-          if [[ "${{ needs.detect-changes.outputs.reservation }}" == "true" ]]; then
-            yq -i ".reservation.tag = \"$TAG\"" $FILE
-          fi
+            if [[ "$CHANGED" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              echo "Updating $SERVICE → $TAG"
+              yq -i ".$SERVICE.tag = \"$TAG\"" $FILE
+            fi
+          }
 
-          if [[ "${{ needs.detect-changes.outputs.search }}" == "true" ]]; then
-            yq -i ".search.tag = \"$TAG\"" $FILE
-          fi
-
-          if [[ "${{ needs.detect-changes.outputs.user }}" == "true" ]]; then
-            yq -i ".user.tag = \"$TAG\"" $FILE
-          fi
+          update frontend "${{ needs.detect-changes.outputs.frontend }}"
+          update reservation "${{ needs.detect-changes.outputs.reservation }}"
+          update search "${{ needs.detect-changes.outputs.search }}"
+          update user "${{ needs.detect-changes.outputs.user }}"
 
       - name: Commit & Push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git commit -am "gitops: update $ENV service tags to $TAG [skip ci]" || echo "No changes"
+
+          git add gitops/environments/$ENV/values.yaml
+          git commit -m "gitops: update $ENV tags to $TAG [skip ci]" || echo "No changes"
           git push
 
       - name: Summary
