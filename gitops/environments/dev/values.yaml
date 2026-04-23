@@ -2,10 +2,10 @@ global:
   registry: 635457411372.dkr.ecr.us-east-1.amazonaws.com
   env: dev
 frontend:
-  tag: dev-beb13ec9
+  tag: dev-980ea48d
 reservation:
-  tag: develop-147289fc
+  tag: dev-980ea48d
 search:
-  tag: dev-beb13ec9
+  tag: dev-980ea48d
 user:
-  tag: develop-0b338d54
+  tag: dev-980ea48d
