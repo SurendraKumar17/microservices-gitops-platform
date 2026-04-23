@@ -4,9 +4,12 @@ global:
 
 frontend:
   tag: dev-3ff497fe
+
 reservation:
-  tag: dev-3ff497fe
+  tag: develop-147289fc   
+
 search:
-  tag: dev-3ff497fe
+  tag: develop-772597ae   
+
 user:
-  tag: dev-3ff497fe
+  tag: develop-0b338d54   
