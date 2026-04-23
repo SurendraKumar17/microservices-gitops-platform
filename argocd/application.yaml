@@ -1,15 +1,20 @@
-#ArgoCD applications for both envs
+# ArgoCD applications for both envs
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: booking-app-dev
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
     repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
     targetRevision: develop
-    path: k8s/dev
+    path: helm/booking-app
+    helm:
+      valueFiles:
+        - ../../gitops/environments/dev/values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: dev
@@ -25,12 +30,17 @@ kind: Application
 metadata:
   name: booking-app-prod
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
     repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
     targetRevision: main
-    path: k8s/prod
+    path: helm/booking-app
+    helm:
+      valueFiles:
+        - ../../gitops/environments/prod/values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: prod
