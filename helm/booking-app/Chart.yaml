@@ -1,15 +1,6 @@
-image:
-  repository: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
-  tag: latest
-
-reservation:
-  replicas: 2
-
-search:
-  replicas: 2
-
-user:
-  replicas: 1
-
-frontend:
-  replicas: 1
+apiVersion: v2
+name: booking-app
+description: Booking microservices Helm chart
+type: application
+version: 0.1.0
+appVersion: "1.0"
