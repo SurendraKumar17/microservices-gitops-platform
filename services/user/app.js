@@ -17,4 +17,4 @@ app.post('/login', (req, res) => {
 
 app.listen(3002, () => {
   console.log("User service running on port 3002");
-});
+});// rebuild all

@@ -16,3 +16,4 @@ app.get('/search', (req, res) => {
 app.listen(3000, () => {
   console.log("Search service running on port 3000");
 });// trigger again
+// rebuild all

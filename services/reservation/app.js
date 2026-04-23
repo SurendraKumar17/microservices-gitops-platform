@@ -17,4 +17,4 @@ app.post('/book', (req, res) => {
 
 app.listen(3001, () => {
   console.log("Booking service running on port 3001");
-});
+});// rebuild all
