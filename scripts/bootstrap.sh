@@ -260,49 +260,6 @@ done
 log "ArgoCD Ingress ready ✅"
 
 # =============================================================
-# STEP 10 — Register microservices with ArgoCD
-# =============================================================
-log "Waiting for ArgoCD CRDs to be ready..."
-kubectl wait --for=condition=established \
-  crd/applications.argoproj.io \
-  --timeout=120s
-
-log "Registering apps with ArgoCD..."
-
-cat <<EOF | kubectl apply -f -
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: microservices-dev
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
-    targetRevision: develop
-    path: helm/booking-app
-    helm:
-      valueFiles:
-        - ../../gitops/environments/dev/values.yaml
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: dev
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-EOF
-
-kubectl get application microservices-dev -n argocd \
-  || err "ArgoCD Application failed to register"
-
-log "ArgoCD Application registered ✅"
-
-# =============================================================
 # SUMMARY
 # =============================================================
 echo ""
