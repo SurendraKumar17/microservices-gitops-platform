@@ -30,7 +30,6 @@ resource "aws_iam_role" "alb_controller" {
       }
     }]
   })
-
   tags = local.tags
 }
 
@@ -43,6 +42,41 @@ resource "aws_iam_policy" "alb_controller" {
 resource "aws_iam_role_policy_attachment" "alb_controller" {
   role       = aws_iam_role.alb_controller.name
   policy_arn = aws_iam_policy.alb_controller.arn
+}
+
+# ── Inline policy for extra ALB permissions ──
+# Why: Managed policy may miss some permissions like
+# DescribeListenerAttributes needed by newer controller versions
+resource "aws_iam_role_policy" "alb_extra" {
+  name = "${var.cluster_name}-alb-extra"
+  role = "${var.cluster_name}-node-role"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "elasticloadbalancing:*",
+        "ec2:Describe*",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "cognito-idp:DescribeUserPoolClient",
+        "acm:ListCertificates",
+        "acm:DescribeCertificate",
+        "iam:ListServerCertificates",
+        "iam:GetServerCertificate",
+        "waf-regional:*",
+        "wafv2:*",
+        "shield:*",
+        "tag:GetResources"
+      ]
+      Resource = "*"
+    }]
+  })
 }
 
 # ────────────────────────────────────────────────
@@ -67,7 +101,6 @@ resource "aws_iam_role" "argocd" {
       }
     }]
   })
-
   tags = local.tags
 }
 
@@ -98,7 +131,6 @@ resource "aws_iam_role" "ebs_csi" {
       }
     }]
   })
-
   tags = local.tags
 }
 
