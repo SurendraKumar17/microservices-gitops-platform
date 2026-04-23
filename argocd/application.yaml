@@ -7,7 +7,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/SurendraKumar17/Production-Grade-Microservices-on-Kubernetes
+    repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
     targetRevision: develop
     path: k8s/dev
   destination:
@@ -28,7 +28,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/SurendraKumar17/Production-Grade-Microservices-on-Kubernetes
+    repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
     targetRevision: main
     path: k8s/prod
   destination:
