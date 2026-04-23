@@ -7,7 +7,7 @@ app.use(express.json());
 /**
  * HOME
  */
-app.get('/', (req, res) => {
+app.get('/health', (req, res) => {
   res.send("Welcome to Travel Booking ✈️");
 });
 
