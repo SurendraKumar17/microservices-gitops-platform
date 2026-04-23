@@ -12,14 +12,18 @@ locals {
 # ────────────────────────────────────────────────
 resource "aws_iam_role" "cluster" {
   name = "${var.cluster_name}-cluster-role"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "eks.amazonaws.com" }
-      Action    = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "eks.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
     }]
   })
+
   tags = local.tags
 }
 
@@ -31,6 +35,7 @@ resource "aws_iam_role_policy_attachment" "cluster_policy" {
 # ────────────────────────────────────────────────
 # EKS Cluster
 # ────────────────────────────────────────────────
+
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
   role_arn = aws_iam_role.cluster.arn
@@ -40,6 +45,12 @@ resource "aws_eks_cluster" "main" {
     subnet_ids              = var.subnet_ids
     endpoint_private_access = true
     endpoint_public_access  = true
+  }
+
+  # Enable API access entries — modern replacement for aws-auth
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
   }
 
   enabled_cluster_log_types = [
@@ -52,7 +63,7 @@ resource "aws_eks_cluster" "main" {
 }
 
 # ────────────────────────────────────────────────
-# OIDC Provider
+# OIDC Provider (for IRSA)
 # ────────────────────────────────────────────────
 data "tls_certificate" "eks" {
   url = aws_eks_cluster.main.identity[0].oidc[0].issuer
@@ -66,10 +77,11 @@ resource "aws_iam_openid_connect_provider" "eks" {
 }
 
 # ────────────────────────────────────────────────
-# Node Group IAM Role
+# Node Group IAM Role (ONLY ONE — FIXED)
 # ────────────────────────────────────────────────
 resource "aws_iam_role" "nodes" {
   name = "${var.cluster_name}-node-role"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -78,6 +90,7 @@ resource "aws_iam_role" "nodes" {
       Action    = "sts:AssumeRole"
     }]
   })
+
   tags = local.tags
 }
 
@@ -97,10 +110,7 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
 }
 
 # ────────────────────────────────────────────────
-# Launch Template
-# Why: Sets IMDS hop limit to 2 so pods running on
-# nodes can reach EC2 metadata service for IAM creds.
-# Default hop limit of 1 blocks pod-level IMDS access.
+# Launch Template (IMDS fix for ALB controller)
 # ────────────────────────────────────────────────
 resource "aws_launch_template" "nodes" {
   name = "${var.cluster_name}-nodes"
@@ -149,11 +159,12 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.cni,
     aws_iam_role_policy_attachment.ecr_read
   ]
+
   tags = local.tags
 }
 
 # ────────────────────────────────────────────────
-# EKS Managed Add-ons
+# EKS Add-ons
 # ────────────────────────────────────────────────
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.main.name

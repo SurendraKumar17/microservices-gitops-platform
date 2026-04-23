@@ -262,6 +262,11 @@ log "ArgoCD Ingress ready ✅"
 # =============================================================
 # STEP 10 — Register microservices with ArgoCD
 # =============================================================
+log "Waiting for ArgoCD CRDs to be ready..."
+kubectl wait --for=condition=established \
+  crd/applications.argoproj.io \
+  --timeout=120s
+
 log "Registering apps with ArgoCD..."
 
 cat <<EOF | kubectl apply -f -
@@ -291,6 +296,9 @@ spec:
     syncOptions:
       - CreateNamespace=true
 EOF
+
+kubectl get application microservices-dev -n argocd \
+  || err "ArgoCD Application failed to register"
 
 log "ArgoCD Application registered ✅"
 

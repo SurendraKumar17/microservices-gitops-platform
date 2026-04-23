@@ -28,7 +28,7 @@ module "eks" {
 }
 
 # ─────────────────────────────────────────
-# IAM (after EKS for OIDC)
+# IAM
 # ─────────────────────────────────────────
 module "iam" {
   source            = "../../modules/iam"
@@ -42,73 +42,34 @@ module "iam" {
 }
 
 # ─────────────────────────────────────────
-# KUBERNETES PROVIDER (NEW)
+# EKS Access Entry for GitHub Actions
+# Why: Modern replacement for aws-auth configmap
+# Gives GitHub Actions role access to EKS cluster
 # ─────────────────────────────────────────
-provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_ca)
-
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args = [
-      "eks", "get-token",
-      "--cluster-name", module.eks.cluster_name,
-      "--region", var.region
-    ]
-  }
+resource "aws_eks_access_entry" "github_actions" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = "arn:aws:iam::635457411372:role/github-actions-ecr-role"
+  type          = "STANDARD"
+  depends_on    = [module.eks]
 }
 
-# ─────────────────────────────────────────
-# AWS AUTH CONFIGMAP (CRITICAL FIX)
-# ─────────────────────────────────────────
-resource "kubernetes_config_map_v1" "aws_auth" {
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
+resource "aws_eks_access_policy_association" "github_actions" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = "arn:aws:iam::635457411372:role/github-actions-ecr-role"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  depends_on    = [module.eks]
+
+  access_scope {
+    type = "cluster"
   }
-
-  data = {
-    mapRoles = <<YAML
-- rolearn: ${module.eks.node_group_role_arn}
-  username: system:node:{{EC2PrivateDNSName}}
-  groups:
-    - system:bootstrappers
-    - system:nodes
-
-- rolearn: arn:aws:iam::635457411372:role/github-actions-ecr-role
-  username: github-actions
-  groups:
-    - system:masters
-YAML
-  }
-
-  depends_on = [module.eks]
 }
 
 # ─────────────────────────────────────────
 # OUTPUTS
 # ─────────────────────────────────────────
-output "cluster_name" {
-  value = module.eks.cluster_name
-}
-
-output "cluster_endpoint" {
-  value = module.eks.cluster_endpoint
-}
-
-output "region" {
-  value = var.region
-}
-
-output "alb_controller_role_arn" {
-  value = module.iam.alb_controller_role_arn
-}
-
-output "argocd_role_arn" {
-  value = module.iam.argocd_role_arn
-}
-
-output "vpc_id" {
-  value = module.vpc.vpc_id
-}
+output "cluster_name"            { value = module.eks.cluster_name }
+output "cluster_endpoint"        { value = module.eks.cluster_endpoint }
+output "region"                  { value = var.region }
+output "alb_controller_role_arn" { value = module.iam.alb_controller_role_arn }
+output "argocd_role_arn"         { value = module.iam.argocd_role_arn }
+output "vpc_id"                  { value = module.vpc.vpc_id }
