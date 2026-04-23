@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: reservation
-        image: {{ .Values.image.repository }}/reservation:{{ .Values.image.tag }}
+        image: {{ .Values.global.registry }}/reservation:{{ .Values.reservation.tag }}
         ports:
         - containerPort: 3001
 

@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: {{ .Values.image.repository }}/frontend:{{ .Values.image.tag }}
+        image: {{ .Values.global.registry }}/frontend:{{ .Values.frontend.tag }}
         ports:
         - containerPort: 3000
 

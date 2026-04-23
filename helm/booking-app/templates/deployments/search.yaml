@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: search
-        image: {{ .Values.image.repository }}/search:{{ .Values.image.tag }}
+        image: {{ .Values.global.registry }}/search:{{ .Values.search.tag }}
         ports:
         - containerPort: 3000
 

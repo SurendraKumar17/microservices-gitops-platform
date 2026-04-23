@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: user
-        image: {{ .Values.image.repository }}/user:{{ .Values.image.tag }}
+        image: {{ .Values.global.registry }}/user:{{ .Values.user.tag }}
         ports:
         - containerPort: 3002
 
