@@ -20,11 +20,25 @@ spec:
               service:
                 name: frontend
                 port:
-                  number: 80
+                  number: 80  
           - path: /api
             pathType: Prefix
             backend:
               service:
                 name: reservation
                 port:
-                  number: 80
+                  number: 3001   
+          - path: /search
+            pathType: Prefix
+            backend:
+              service:
+                name: search
+                port:
+                  number: 3000   
+          - path: /user
+            pathType: Prefix
+            backend:
+              service:
+                name: user
+                port:
+                  number: 3002    
