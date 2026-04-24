@@ -14,11 +14,21 @@ spec:
       labels:
         app: frontend
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
       - name: frontend
         image: {{ .Values.global.registry }}/frontend:{{ .Values.frontend.tag }}
+        imagePullPolicy: IfNotPresent
+
         ports:
-        - containerPort: 3000
+        - name: http
+          containerPort: 3000
+
+        env:
+        - name: PORT
+          value: "{{ .Values.frontend.port }}"
+        - name: SERVICE_NAME
+          value: "frontend"
 
         resources:
           requests:
@@ -37,7 +47,12 @@ spec:
 
         readinessProbe:
           httpGet:
-            path: /health
+            path: /ready   # ✅ FIXED
             port: 3000
           initialDelaySeconds: 5
           periodSeconds: 5
+
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 5"]

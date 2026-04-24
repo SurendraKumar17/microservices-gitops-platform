@@ -1,44 +1,45 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: booking-app-ingress
-  namespace: dev
+  name: {{ .Release.Name }}-ingress
+  labels:
+    {{- include "booking.labels" . | nindent 4 }}
   annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-    alb.ingress.kubernetes.io/backend-protocol: HTTP
-    alb.ingress.kubernetes.io/healthcheck-path: /
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
 spec:
-  ingressClassName: alb
+  ingressClassName: {{ .Values.ingress.className }}
   rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80  
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: reservation
-                port:
-                  number: 3001   
-          - path: /search
-            pathType: Prefix
-            backend:
-              service:
-                name: search
-                port:
-                  number: 3000   
-          - path: /user
-            pathType: Prefix
-            backend:
-              service:
-                name: user
-                port:
-                  number: 3002    
+  - http:   # 👈 removed host (important for ALB DNS access)
+      paths:
+
+      - path: /api/users
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-user
+            port:
+              number: 3002
+
+      - path: /api/search
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-search
+            port:
+              number: 3003
+
+      - path: /api/book
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-book   # ✅ FIXED
+            port:
+              number: 3001
+
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-frontend
+            port:
+              number: 3000

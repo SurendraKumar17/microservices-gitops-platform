@@ -1,16 +1,14 @@
 {
-  "name": "skybook-user-service",
+  "name": "skybook-booking-service",
   "version": "1.0.0",
-  "description": "SkyBook User & Auth Service",
+  "description": "SkyBook Booking Service - Cart & Orders",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
     "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.2",
     "pg": "^8.11.3"
   },
   "devDependencies": {

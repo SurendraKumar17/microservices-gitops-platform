@@ -1,15 +1,30 @@
-image:
-  repository: 635457411372.dkr.ecr.us-east-1.amazonaws.com
-  tag: latest
+global:
+  registry: "YOUR_ECR_OR_REGISTRY"   # e.g. 123456.dkr.ecr.us-east-1.amazonaws.com
+
+frontend:
+  replicas: 2
+  tag: "latest"
 
 reservation:
   replicas: 2
+  tag: "latest"
 
 search:
   replicas: 2
+  tag: "latest"
 
 user:
-  replicas: 1
+  replicas: 2
+  tag: "latest"
 
-frontend:
-  replicas: 1
+postgres:
+  host: "postgres"        # K8s service name of your postgres
+  user: "postgres"
+
+ingress:
+  className: "alb"        # use "nginx" if you have nginx ingress controller
+  host: "YOUR_DOMAIN_OR_ELB"
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip

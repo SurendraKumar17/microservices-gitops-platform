@@ -1,42 +1,42 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-search
+  name: {{ .Release.Name }}-book
   labels:
     {{- include "booking.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.search.replicas }}
+  replicas: {{ .Values.book.replicas }}
   selector:
     matchLabels:
-      app: search
+      app: book
   template:
     metadata:
       labels:
-        app: search
+        app: book
     spec:
       terminationGracePeriodSeconds: 30
-
       containers:
-      - name: search
-        image: {{ .Values.global.registry }}/search:{{ .Values.search.tag }}
+      - name: book
+        image: {{ .Values.global.registry }}/book:{{ .Values.book.tag }}
         imagePullPolicy: IfNotPresent
 
         ports:
         - name: http
-          containerPort: 3003
+          containerPort: 3001
 
         env:
         - name: PORT
-          value: "3003"
+          value: "3001"
+
         - name: SERVICE_NAME
-          value: "search"
+          value: "book"
 
         - name: DB_HOST
           value: {{ .Values.postgres.host }}
         - name: DB_PORT
           value: "5432"
         - name: DB_NAME
-          value: "flights"
+          value: "bookings"
         - name: DB_USER
           value: {{ .Values.postgres.user }}
         - name: DB_PASSWORD
@@ -56,14 +56,14 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 3003
+            port: 3001
           initialDelaySeconds: 15
           periodSeconds: 10
 
         readinessProbe:
           httpGet:
-            path: /ready   # ✅ FIXED
-            port: 3003
+            path: /ready
+            port: 3001
           initialDelaySeconds: 10
           periodSeconds: 5
 

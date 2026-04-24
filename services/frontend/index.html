@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SkyBook - Flights, Hotels & Packages</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-dark: #0a0f1e;
+      --bg-nav: #111827;
+      --bg-hero: #1a2744;
+      --bg-card: #1c2333;
+      --bg-input: #252d3d;
+      --border: #2e3a52;
+      --text-primary: #f0f4ff;
+      --text-secondary: #8a9bc0;
+      --text-muted: #5a6a8a;
+      --accent-blue: #3b82f6;
+      --accent-teal: #0ea5e9;
+      --accent-green: #22c55e;
+      --accent-pink: #ec4899;
+      --font-main: 'DM Sans', sans-serif;
+      --font-display: 'Space Grotesk', sans-serif;
+    }
+
+    body { font-family: var(--font-main); background: var(--bg-dark); color: var(--text-primary); min-height: 100vh; }
+
+    /* NAV */
+    nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 64px;
+      background: var(--bg-nav); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo { font-family: var(--font-display); font-size: 1.4rem; font-weight: 700; }
+    .logo span:first-child { color: var(--text-primary); }
+    .logo span:last-child { color: var(--accent-teal); }
+    .nav-links { display: flex; gap: 0.5rem; }
+    .nav-links a {
+      padding: 0.4rem 1rem; border-radius: 8px; border: 1px solid var(--border);
+      color: var(--text-primary); text-decoration: none; font-size: 0.9rem; font-weight: 500;
+      transition: all 0.2s;
+    }
+    .nav-links a:hover { background: var(--bg-input); border-color: var(--accent-blue); }
+    .nav-right { display: flex; align-items: center; gap: 1rem; }
+    .cart-btn {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 1rem; border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-primary); cursor: pointer; font-size: 0.9rem;
+      font-family: var(--font-main); font-weight: 500;
+    }
+    .cart-badge {
+      background: #ef4444; color: white; border-radius: 50%;
+      width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; font-weight: 700;
+    }
+
+    /* HERO */
+    .hero {
+      background: linear-gradient(160deg, #1a2744 0%, #0d1b3e 60%, #0a0f1e 100%);
+      padding: 4rem 2rem 3rem; text-align: center; position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: ''; position: absolute; top: -50%; left: -50%;
+      width: 200%; height: 200%;
+      background: radial-gradient(ellipse at 30% 40%, rgba(59,130,246,0.08) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 60%, rgba(14,165,233,0.06) 0%, transparent 50%);
+      pointer-events: none;
+    }
+    .hero h1 { font-family: var(--font-display); font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; margin-bottom: 0.75rem; position: relative; }
+    .hero p { color: var(--text-secondary); font-size: 1rem; margin-bottom: 2.5rem; position: relative; }
+
+    /* SEARCH BOX */
+    .search-box {
+      background: #1c2538; border: 1px solid var(--border); border-radius: 16px;
+      padding: 1.5rem; max-width: 860px; margin: 0 auto; position: relative;
+    }
+    .search-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+    .tab {
+      padding: 0.5rem 1.2rem; border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-secondary); cursor: pointer;
+      font-family: var(--font-main); font-size: 0.9rem; font-weight: 600; transition: all 0.2s;
+    }
+    .tab.active { background: #252d3d; color: var(--text-primary); border-color: #3a4a6a; }
+    .search-fields { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+    .field-group { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 160px; }
+    .field-group label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; color: var(--text-muted); text-transform: uppercase; }
+    .field-group input {
+      background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px;
+      padding: 0.75rem 1rem; color: var(--text-primary); font-size: 0.95rem;
+      font-family: var(--font-main); outline: none; transition: border-color 0.2s;
+    }
+    .field-group input:focus { border-color: var(--accent-blue); }
+    .search-btn {
+      padding: 0.75rem 2rem; border-radius: 10px; border: none;
+      background: var(--text-primary); color: #0a0f1e;
+      font-family: var(--font-main); font-size: 0.95rem; font-weight: 700;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .search-btn:hover { background: #c8d8ff; transform: translateY(-1px); }
+
+    /* MAIN CONTENT */
+    main { background: var(--bg-dark); padding: 3rem 2rem; max-width: 1100px; margin: 0 auto; }
+
+    /* SECTION HEADERS */
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    .section-header h2 { font-family: var(--font-display); font-size: 1.3rem; font-weight: 600; }
+    .section-header span { font-size: 0.85rem; color: var(--text-secondary); }
+
+    /* DESTINATION CARDS */
+    .destinations-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 3rem; }
+    .dest-card {
+      border-radius: 14px; overflow: hidden; border: 1px solid var(--border);
+      background: var(--bg-card); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .dest-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+    .dest-card-img {
+      height: 140px; display: flex; align-items: center; justify-content: center;
+      font-size: 3.5rem;
+    }
+    .dest-card-img.london { background: #dbeafe; }
+    .dest-card-img.paris { background: #fce7f3; }
+    .dest-card-img.tokyo { background: #dcfce7; }
+    .dest-card-img.bali { background: #fef3c7; }
+    .dest-card-body { padding: 1rem; }
+    .dest-card-body h3 { font-weight: 600; font-size: 1rem; color: var(--text-primary); }
+    .dest-card-body .country { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+    .dest-card-body .price { font-size: 0.8rem; color: var(--text-muted); }
+    .dest-card-body .price span { color: var(--accent-green); font-weight: 700; font-size: 1rem; }
+
+    /* HOTEL CARDS */
+    .hotels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 3rem; }
+    .hotel-card {
+      border-radius: 14px; overflow: hidden; border: 1px solid var(--border);
+      background: var(--bg-card); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .hotel-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+    .hotel-img {
+      height: 160px; display: flex; align-items: center; justify-content: center;
+      font-size: 4rem; position: relative;
+    }
+    .hotel-img .stars {
+      position: absolute; bottom: 8px; right: 10px;
+      background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 20px; font-size: 0.7rem;
+      color: #fbbf24;
+    }
+    .hotel-body { padding: 1rem; }
+    .hotel-body h3 { font-weight: 600; font-size: 1rem; }
+    .hotel-body .location { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+    .hotel-price-row { display: flex; align-items: center; justify-content: space-between; }
+    .hotel-price { color: var(--accent-green); font-weight: 700; font-size: 1rem; }
+    .hotel-per { font-size: 0.75rem; color: var(--text-muted); }
+    .book-btn {
+      padding: 0.4rem 1rem; border-radius: 8px; border: none;
+      background: var(--accent-blue); color: white;
+      font-family: var(--font-main); font-size: 0.8rem; font-weight: 600; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .book-btn:hover { background: #2563eb; }
+
+    /* FLIGHT RESULTS (hidden by default) */
+    #flight-results { margin-bottom: 3rem; }
+    .flight-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 1.2rem 1.5rem; margin-bottom: 0.75rem;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;
+      transition: border-color 0.2s;
+    }
+    .flight-card:hover { border-color: var(--accent-blue); }
+    .flight-airline { display: flex; align-items: center; gap: 0.75rem; }
+    .airline-icon { font-size: 1.5rem; }
+    .airline-name { font-weight: 600; font-size: 0.95rem; }
+    .airline-class { font-size: 0.75rem; color: var(--text-secondary); }
+    .flight-route { text-align: center; }
+    .flight-times { display: flex; align-items: center; gap: 1rem; }
+    .flight-time { font-size: 1.2rem; font-weight: 700; font-family: var(--font-display); }
+    .flight-arrow { color: var(--text-muted); font-size: 1.2rem; }
+    .flight-duration { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }
+    .flight-stops { font-size: 0.75rem; color: var(--accent-teal); text-align: center; }
+    .flight-price-block { text-align: right; }
+    .flight-price { font-size: 1.3rem; font-weight: 700; color: var(--accent-green); font-family: var(--font-display); }
+    .flight-book { padding: 0.5rem 1.2rem; border-radius: 8px; border: none; background: var(--accent-blue); color: white; font-family: var(--font-main); font-weight: 600; cursor: pointer; margin-top: 0.3rem; transition: background 0.2s; }
+    .flight-book:hover { background: #2563eb; }
+    .hidden { display: none; }
+
+    /* TOAST */
+    .toast {
+      position: fixed; bottom: 2rem; right: 2rem;
+      background: #22c55e; color: white; padding: 0.75rem 1.5rem;
+      border-radius: 10px; font-weight: 600; font-size: 0.9rem;
+      transform: translateY(100px); opacity: 0; transition: all 0.3s; z-index: 999;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* LOADING */
+    .loading { text-align: center; padding: 2rem; color: var(--text-secondary); font-size: 0.9rem; }
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 0.5rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 640px) {
+      .search-fields { flex-direction: column; }
+      nav { padding: 0 1rem; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo"><span>Sky</span><span>Book</span></div>
+  <div class="nav-links">
+    <a href="#" onclick="showSection('home')">Home</a>
+    <a href="#" onclick="showSection('flights')">Flights</a>
+    <a href="#" onclick="showSection('hotels')">Hotels</a>
+    <a href="#" onclick="showSection('home')">My Trip</a>
+  </div>
+  <div class="nav-right">
+    <button class="cart-btn">Cart <span class="cart-badge" id="cart-count">0</span></button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>Where do you want to go?</h1>
+  <p>Flights, hotels and packages — all in one place</p>
+  <div class="search-box">
+    <div class="search-tabs">
+      <button class="tab active" onclick="setTab('Flights',this)">Flights</button>
+      <button class="tab" onclick="setTab('Hotels',this)">Hotels</button>
+      <button class="tab" onclick="setTab('Packages',this)">Packages</button>
+    </div>
+    <div class="search-fields">
+      <div class="field-group">
+        <label>From</label>
+        <input type="text" id="from" value="New York (JFK)" placeholder="Departure city" />
+      </div>
+      <div class="field-group">
+        <label>To</label>
+        <input type="text" id="to" value="London (LHR)" placeholder="Destination" />
+      </div>
+      <div class="field-group">
+        <label>Depart</label>
+        <input type="date" id="depart" value="2025-06-15" />
+      </div>
+      <button class="search-btn" onclick="doSearch()">Search</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<main>
+
+  <!-- FLIGHT RESULTS -->
+  <div id="flight-results" class="hidden">
+    <div class="section-header">
+      <h2 id="results-title">Flight Results</h2>
+      <span id="results-count"></span>
+    </div>
+    <div id="results-list"></div>
+  </div>
+
+  <!-- POPULAR DESTINATIONS -->
+  <div id="section-destinations">
+    <div class="section-header">
+      <h2>Popular destinations</h2>
+      <span>Best deals this week</span>
+    </div>
+    <div class="destinations-grid">
+      <div class="dest-card" onclick="quickSearch('London')">
+        <div class="dest-card-img london">🏰</div>
+        <div class="dest-card-body">
+          <h3>London</h3>
+          <div class="country">United Kingdom</div>
+          <div class="price">from <span>$499</span></div>
+        </div>
+      </div>
+      <div class="dest-card" onclick="quickSearch('Paris')">
+        <div class="dest-card-img paris">🗼</div>
+        <div class="dest-card-body">
+          <h3>Paris</h3>
+          <div class="country">France</div>
+          <div class="price">from <span>$389</span></div>
+        </div>
+      </div>
+      <div class="dest-card" onclick="quickSearch('Tokyo')">
+        <div class="dest-card-img tokyo">⛩️</div>
+        <div class="dest-card-body">
+          <h3>Tokyo</h3>
+          <div class="country">Japan</div>
+          <div class="price">from <span>$699</span></div>
+        </div>
+      </div>
+      <div class="dest-card" onclick="quickSearch('Bali')">
+        <div class="dest-card-img bali">🌴</div>
+        <div class="dest-card-body">
+          <h3>Bali</h3>
+          <div class="country">Indonesia</div>
+          <div class="price">from <span>$549</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FEATURED HOTELS -->
+  <div id="section-hotels">
+    <div class="section-header">
+      <h2>Featured hotels</h2>
+      <span>Handpicked for you</span>
+    </div>
+    <div class="hotels-grid" id="hotels-grid">
+      <div class="loading"><span class="spinner"></span>Loading hotels...</div>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let cartCount = 0;
+  let activeTab = 'Flights';
+
+  function setTab(tab, el) {
+    activeTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  function updateCart() {
+    document.getElementById('cart-count').textContent = cartCount;
+  }
+
+  async function doSearch() {
+    const from = document.getElementById('from').value;
+    const to = document.getElementById('to').value;
+    const depart = document.getElementById('depart').value;
+    if (!from || !to) { showToast('Please fill in From and To fields'); return; }
+
+    const resultsDiv = document.getElementById('flight-results');
+    const listDiv = document.getElementById('results-list');
+    resultsDiv.classList.remove('hidden');
+    document.getElementById('results-title').textContent = `${from} → ${to}`;
+    listDiv.innerHTML = '<div class="loading"><span class="spinner"></span>Searching flights...</div>';
+
+    try {
+      const res = await fetch(`/api/search/flights?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${depart}`);
+      const data = await res.json();
+      renderFlights(data.flights || []);
+      document.getElementById('results-count').textContent = `${(data.flights||[]).length} flights found`;
+    } catch(e) {
+      listDiv.innerHTML = '<div class="loading">⚠️ Search service unavailable. Showing sample results.</div>';
+      renderFlights(getSampleFlights(from, to));
+    }
+
+    resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function getSampleFlights(from, to) {
+    return [
+      { id:1, airline:'British Airways', icon:'✈️', departure:'08:00', arrival:'20:00', duration:'12h 00m', stops:'Direct', price:499, class:'Economy' },
+      { id:2, airline:'Emirates', icon:'🛫', departure:'11:30', arrival:'23:45', duration:'12h 15m', stops:'1 stop', price:389, class:'Economy' },
+      { id:3, airline:'Lufthansa', icon:'🛩️', departure:'14:00', arrival:'06:30+1', duration:'16h 30m', stops:'1 stop via FRA', price:320, class:'Economy' },
+      { id:4, airline:'Singapore Airlines', icon:'✈️', departure:'22:00', arrival:'18:30+1', duration:'20h 30m', stops:'1 stop', price:580, class:'Business' },
+    ];
+  }
+
+  function renderFlights(flights) {
+    const listDiv = document.getElementById('results-list');
+    if (!flights.length) { listDiv.innerHTML = '<div class="loading">No flights found.</div>'; return; }
+    listDiv.innerHTML = flights.map(f => `
+      <div class="flight-card">
+        <div class="flight-airline">
+          <span class="airline-icon">${f.icon||'✈️'}</span>
+          <div>
+            <div class="airline-name">${f.airline}</div>
+            <div class="airline-class">${f.class||'Economy'}</div>
+          </div>
+        </div>
+        <div class="flight-route">
+          <div class="flight-times">
+            <span class="flight-time">${f.departure}</span>
+            <span class="flight-arrow">→</span>
+            <span class="flight-time">${f.arrival}</span>
+          </div>
+          <div class="flight-duration">${f.duration}</div>
+          <div class="flight-stops">${f.stops}</div>
+        </div>
+        <div class="flight-price-block">
+          <div class="flight-price">$${f.price}</div>
+          <button class="flight-book" onclick="addToCart('flight','${f.airline}',${f.price})">Book Now</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function addToCart(type, name, price) {
+    cartCount++;
+    updateCart();
+    showToast(`✅ ${name} added to cart — $${price}`);
+    // POST to reservation service
+    fetch('/api/bookings/cart', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ type, name, price })
+    }).catch(() => {});
+  }
+
+  function quickSearch(city) {
+    document.getElementById('to').value = city;
+    doSearch();
+  }
+
+  async function loadHotels() {
+    const grid = document.getElementById('hotels-grid');
+    try {
+      const res = await fetch('/api/search/hotels?city=featured');
+      const data = await res.json();
+      renderHotels(data.hotels || getSampleHotels());
+    } catch(e) {
+      renderHotels(getSampleHotels());
+    }
+  }
+
+  function getSampleHotels() {
+    return [
+      { name:'The Savoy', location:'London, UK', icon:'🏨', stars:'★★★★★', price:320, bg:'#dbeafe' },
+      { name:'Hotel de Crillon', location:'Paris, France', icon:'🏩', stars:'★★★★★', price:480, bg:'#fce7f3' },
+      { name:'Park Hyatt Tokyo', location:'Tokyo, Japan', icon:'🗼', stars:'★★★★★', price:550, bg:'#dcfce7' },
+      { name:'Four Seasons Bali', location:'Bali, Indonesia', icon:'🌺', stars:'★★★★★', price:290, bg:'#fef3c7' },
+      { name:'Burj Al Arab', location:'Dubai, UAE', icon:'⛵', stars:'★★★★★', price:1200, bg:'#ede9fe' },
+      { name:'Marina Bay Sands', location:'Singapore', icon:'🌃', stars:'★★★★★', price:380, bg:'#ecfeff' },
+    ];
+  }
+
+  function renderHotels(hotels) {
+    const grid = document.getElementById('hotels-grid');
+    grid.innerHTML = hotels.map(h => `
+      <div class="hotel-card">
+        <div class="hotel-img" style="background:${h.bg||'#1c2538'}">
+          <span>${h.icon}</span>
+          <span class="stars">${h.stars}</span>
+        </div>
+        <div class="hotel-body">
+          <h3>${h.name}</h3>
+          <div class="location">📍 ${h.location}</div>
+          <div class="hotel-price-row">
+            <div>
+              <span class="hotel-price">$${h.price}</span>
+              <span class="hotel-per"> / night</span>
+            </div>
+            <button class="book-btn" onclick="addToCart('hotel','${h.name}',${h.price})">Book</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function showSection(section) {
+    if (section === 'flights') { document.getElementById('flight-results').classList.remove('hidden'); }
+  }
+
+  // Init
+  loadHotels();
+</script>
+</body>
+</html>
