@@ -1,0 +1,13 @@
+#shared config
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "booking.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.global.env }}
+  DB_HOST: {{ .Values.postgres.host }}
+  DB_PORT: "5432"
+  DB_USER: {{ .Values.postgres.user }}

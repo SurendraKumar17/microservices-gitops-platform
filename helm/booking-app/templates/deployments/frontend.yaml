@@ -6,6 +6,12 @@ metadata:
     {{- include "booking.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.frontend.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: frontend
@@ -13,8 +19,32 @@ spec:
     metadata:
       labels:
         app: frontend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
     spec:
       terminationGracePeriodSeconds: 30
+      serviceAccountName: {{ .Release.Name }}-frontend
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: frontend
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: frontend
+                topologyKey: kubernetes.io/hostname
+
       containers:
       - name: frontend
         image: {{ .Values.global.registry }}/frontend:{{ .Values.frontend.tag }}
@@ -26,33 +56,14 @@ spec:
 
         env:
         - name: PORT
-          value: "{{ .Values.frontend.port }}"
+          value: "3000"
         - name: SERVICE_NAME
           value: "frontend"
+        - name: NODE_ENV
+          value: {{ .Values.global.env }}
+
+        envFrom:
+        - configMapRef:
+            name: {{ .Release.Name }}-config
 
         resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
-
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-
-        readinessProbe:
-          httpGet:
-            path: /ready   # ✅ FIXED
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 5
-
-        lifecycle:
-          preStop:
-            exec:
-              command: ["sh", "-c", "sleep 5"]

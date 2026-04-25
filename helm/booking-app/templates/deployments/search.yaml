@@ -6,6 +6,12 @@ metadata:
     {{- include "booking.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.search.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: search
@@ -13,8 +19,32 @@ spec:
     metadata:
       labels:
         app: search
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3003"
+        prometheus.io/path: "/metrics"
     spec:
       terminationGracePeriodSeconds: 30
+      serviceAccountName: {{ .Release.Name }}-search
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: search
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: search
+                topologyKey: kubernetes.io/hostname
+
       containers:
       - name: search
         image: {{ .Values.global.registry }}/search:{{ .Values.search.tag }}
@@ -29,20 +59,19 @@ spec:
           value: "3003"
         - name: SERVICE_NAME
           value: "search"
-
-        - name: DB_HOST
-          value: {{ .Values.postgres.host }}
-        - name: DB_PORT
-          value: "5432"
+        - name: NODE_ENV
+          value: {{ .Values.global.env }}
         - name: DB_NAME
           value: "flights"
-        - name: DB_USER
-          value: {{ .Values.postgres.user }}
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: postgres-secret
               key: password
+
+        envFrom:
+        - configMapRef:
+            name: {{ .Release.Name }}-config
 
         resources:
           requests:
@@ -58,15 +87,5 @@ spec:
             port: 3003
           initialDelaySeconds: 15
           periodSeconds: 10
-
-        readinessProbe:
-          httpGet:
-            path: /ready   # ✅ FIXED
-            port: 3003
-          initialDelaySeconds: 10
-          periodSeconds: 5
-
-        lifecycle:
-          preStop:
-            exec:
-              command: ["sh", "-c", "sleep 5"]
+          failureThreshold: 3
+          timeoutSeconds: 5

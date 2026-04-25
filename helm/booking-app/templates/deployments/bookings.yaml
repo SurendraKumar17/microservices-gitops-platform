@@ -6,6 +6,12 @@ metadata:
     {{- include "booking.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.book.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0        # zero downtime deploys
   selector:
     matchLabels:
       app: book
@@ -13,8 +19,33 @@ spec:
     metadata:
       labels:
         app: book
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/metrics"
     spec:
       terminationGracePeriodSeconds: 30
+      serviceAccountName: {{ .Release.Name }}-book
+
+      # spread pods across nodes for HA
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: book
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: book
+                topologyKey: kubernetes.io/hostname
+
       containers:
       - name: book
         image: {{ .Values.global.registry }}/book:{{ .Values.book.tag }}
@@ -27,18 +58,18 @@ spec:
         env:
         - name: PORT
           value: "3001"
-
         - name: SERVICE_NAME
           value: "book"
-
+        - name: NODE_ENV
+          value: {{ .Values.global.env }}
         - name: DB_HOST
-          value: {{ .Values.postgres.host }}
+          value: {{ .Values.postgres.host | quote }}
         - name: DB_PORT
           value: "5432"
         - name: DB_NAME
           value: "bookings"
         - name: DB_USER
-          value: {{ .Values.postgres.user }}
+          value: {{ .Values.postgres.user | quote }}
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -59,6 +90,8 @@ spec:
             port: 3001
           initialDelaySeconds: 15
           periodSeconds: 10
+          failureThreshold: 3
+          timeoutSeconds: 5
 
         readinessProbe:
           httpGet:
@@ -66,8 +99,37 @@ spec:
             port: 3001
           initialDelaySeconds: 10
           periodSeconds: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
+
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          failureThreshold: 30    # gives 30*10=300s for slow cold starts
+          periodSeconds: 10
 
         lifecycle:
           preStop:
             exec:
               command: ["sh", "-c", "sleep 5"]
+
+        # security hardening
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp             # needed since root fs is read-only
+
+      volumes:
+      - name: tmp
+        emptyDir: {}
+
+      securityContext:
+        fsGroup: 1000

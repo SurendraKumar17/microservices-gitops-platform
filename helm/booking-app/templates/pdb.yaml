@@ -1,0 +1,14 @@
+{{- range $service := list "book" "user" "search" "frontend" }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $.Release.Name }}-{{ $service }}-pdb
+  labels:
+    {{- include "booking.labels" $ | nindent 4 }}
+spec:
+  minAvailable: 1       # always keep at least 1 pod up during node drains
+  selector:
+    matchLabels:
+      app: {{ $service }}
+{{- end }}

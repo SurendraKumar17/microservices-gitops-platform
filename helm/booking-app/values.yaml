@@ -1,30 +1,38 @@
 global:
-  registry: "YOUR_ECR_OR_REGISTRY"   # e.g. 123456.dkr.ecr.us-east-1.amazonaws.com
+  registry: 635457411372.dkr.ecr.us-east-1.amazonaws.com
+  env: dev
 
 frontend:
-  replicas: 2
-  tag: "latest"
+  replicas: 1
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+  roleArn: ""              # add IRSA role ARN if frontend needs AWS access
 
-reservation:
-  replicas: 2
-  tag: "latest"
+book:
+  replicas: 1
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+  roleArn: ""
 
 search:
-  replicas: 2
-  tag: "latest"
+  replicas: 1
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+  roleArn: ""
 
 user:
-  replicas: 2
-  tag: "latest"
+  replicas: 1
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+  roleArn: ""
 
 postgres:
-  host: "postgres"        # K8s service name of your postgres
+  host: "postgres"
   user: "postgres"
 
 ingress:
-  className: "alb"        # use "nginx" if you have nginx ingress controller
-  host: "YOUR_DOMAIN_OR_ELB"
+  className: "alb"
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/backend-protocol: HTTP

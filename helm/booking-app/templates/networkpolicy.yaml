@@ -1,0 +1,53 @@
+# default deny all ingress ----- zero trust networking
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# allow ingress → frontend only from ALB
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-ingress-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - port: 3000
+---
+# allow services to talk to each other and to postgres
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-internal
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "booking.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          {{- include "booking.selectorLabels" . | nindent 10 }}
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          {{- include "booking.selectorLabels" . | nindent 10 }}
+  - to: # allow DNS
+    - namespaceSelector: {}
+    ports:
+    - port: 53
+      protocol: UDP
