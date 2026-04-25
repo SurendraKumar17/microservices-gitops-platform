@@ -2,44 +2,58 @@
 # =============================================================
 # bootstrap.sh
 # Run ONCE after terraform apply
-# Installs: ALB Controller → EBS CSI → Cluster Autoscaler
-#           → Metrics Server → ArgoCD
+# Purpose: AWS-level pre-flight config only.
+#          Helm chart installs are handled by Terraform (modules/helm).
+#
+# Does:
+#   1. Fix IMDS hop limit on all EKS nodes
+#   2. Tag public subnets for ALB discovery
+#   3. Install EKS Pod Identity Agent addon
+#   4. Attach IAM policies to node role
+#   5. Configure kubectl
+#
+# Does NOT: install any Helm charts (Terraform owns those)
 # =============================================================
 set -euo pipefail
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-log()  { echo -e "${GREEN}[INFO]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 err()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# Verify required tools
+# ── Verify required tools ──────────────────────────────────────
 command -v aws       >/dev/null 2>&1 || err "aws cli not installed"
 command -v kubectl   >/dev/null 2>&1 || err "kubectl not installed"
-command -v helm      >/dev/null 2>&1 || err "helm not installed"
 command -v terraform >/dev/null 2>&1 || err "terraform not installed"
 
-# ── Read from Terraform outputs ──
+# ── Read Terraform outputs ─────────────────────────────────────
 TERRAFORM_DIR="$(dirname "$0")/../infrastructure/envs/dev"
-log "Reading Terraform outputs..."
+log "Reading Terraform outputs from: $TERRAFORM_DIR"
 cd "$TERRAFORM_DIR"
 
 CLUSTER_NAME=$(terraform output -raw cluster_name)
 REGION=$(terraform output -raw region)
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 VPC_ID=$(terraform output -raw vpc_id)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-log "Cluster: $CLUSTER_NAME | Region: $REGION | Account: $ACCOUNT_ID"
+log "Cluster : $CLUSTER_NAME"
+log "Region  : $REGION"
+log "Account : $ACCOUNT_ID"
+log "VPC     : $VPC_ID"
 cd - > /dev/null
 
-# ── Configure kubectl ──
+# =============================================================
+# STEP 1 — Configure kubectl
+# =============================================================
 log "Configuring kubectl..."
 aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
-kubectl get nodes || err "Cannot connect to cluster"
+kubectl get nodes || err "Cannot connect to cluster — check your kubeconfig"
+log "kubectl configured ✅"
 
 # =============================================================
-# STEP 1 — Fix IMDS hop limit on all nodes
-# Why: Default hop limit is 1, pods need 2 to reach
-# EC2 metadata service for IAM credentials
+# STEP 2 — Fix IMDS hop limit on all nodes
+# Why: Default hop limit is 1. Pods need hop limit 2 to reach
+#      the EC2 metadata service for IRSA/IAM credentials.
 # =============================================================
 log "Fixing IMDS hop limit on nodes..."
 INSTANCES=$(aws ec2 describe-instances \
@@ -47,22 +61,27 @@ INSTANCES=$(aws ec2 describe-instances \
     "Name=tag:eks:cluster-name,Values=${CLUSTER_NAME}" \
     "Name=instance-state-name,Values=running" \
   --query 'Reservations[*].Instances[*].InstanceId' \
-  --output text)
+  --output text \
+  --region "$REGION")
 
-for i in $INSTANCES; do
-  aws ec2 modify-instance-metadata-options \
-    --instance-id "$i" \
-    --http-put-response-hop-limit 2 \
-    --http-endpoint enabled \
-    --region "$REGION" > /dev/null
-  log "Fixed IMDS on $i"
-done
-log "IMDS hop limit fixed ✅"
+if [ -z "$INSTANCES" ]; then
+  warn "No running instances found for cluster $CLUSTER_NAME — skipping IMDS fix"
+else
+  for instance_id in $INSTANCES; do
+    aws ec2 modify-instance-metadata-options \
+      --instance-id "$instance_id" \
+      --http-put-response-hop-limit 2 \
+      --http-endpoint enabled \
+      --region "$REGION" > /dev/null
+    log "  Fixed IMDS on $instance_id"
+  done
+  log "IMDS hop limit fixed ✅"
+fi
 
 # =============================================================
-# STEP 2 — Tag public subnets for ALB discovery
-# Why: ALB controller needs subnets tagged with cluster name
-# and elb role to auto-discover them
+# STEP 3 — Tag public subnets for ALB discovery
+# Why: The ALB controller uses these tags to auto-discover
+#      which subnets to place internet-facing load balancers in.
 # =============================================================
 log "Tagging public subnets for ALB..."
 PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
@@ -70,208 +89,107 @@ PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
     "Name=vpc-id,Values=${VPC_ID}" \
     "Name=tag:Name,Values=*public*" \
   --query 'Subnets[*].SubnetId' \
-  --output text)
+  --output text \
+  --region "$REGION")
 
-for subnet in $PUBLIC_SUBNETS; do
-  aws ec2 create-tags \
-    --resources "$subnet" \
-    --tags \
-      Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared \
-      Key=kubernetes.io/role/elb,Value=1 \
+if [ -z "$PUBLIC_SUBNETS" ]; then
+  warn "No public subnets found matching '*public*' in VPC $VPC_ID — skipping subnet tagging"
+else
+  for subnet_id in $PUBLIC_SUBNETS; do
+    aws ec2 create-tags \
+      --resources "$subnet_id" \
+      --tags \
+        "Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared" \
+        "Key=kubernetes.io/role/elb,Value=1" \
+      --region "$REGION"
+    log "  Tagged subnet $subnet_id"
+  done
+  log "Public subnets tagged ✅"
+fi
+
+# =============================================================
+# STEP 4 — Install EKS Pod Identity Agent addon
+# Why: Required for EKS Pod Identity (the modern replacement
+#      for IRSA) to work. Must be an EKS managed addon.
+# =============================================================
+log "Installing EKS Pod Identity Agent addon..."
+ADDON_STATUS=$(aws eks describe-addon \
+  --cluster-name "$CLUSTER_NAME" \
+  --addon-name eks-pod-identity-agent \
+  --region "$REGION" \
+  --query 'addon.status' \
+  --output text 2>/dev/null || echo "NOT_FOUND")
+
+if [ "$ADDON_STATUS" = "ACTIVE" ]; then
+  log "Pod Identity Agent already ACTIVE — skipping"
+else
+  aws eks create-addon \
+    --cluster-name "$CLUSTER_NAME" \
+    --addon-name eks-pod-identity-agent \
     --region "$REGION"
-  log "Tagged subnet $subnet"
-done
-log "Subnets tagged ✅"
+
+  log "Waiting for Pod Identity Agent to become active..."
+  aws eks wait addon-active \
+    --cluster-name "$CLUSTER_NAME" \
+    --addon-name eks-pod-identity-agent \
+    --region "$REGION"
+  log "Pod Identity Agent ready ✅"
+fi
 
 # =============================================================
-# STEP 3 — Install EKS Pod Identity Agent
+# STEP 5 — Attach IAM policies to node role
+# Why: Node IAM role needs these policies so the ALB controller
+#      and EBS CSI driver can make AWS API calls from pods.
+#      Terraform creates the policies; this attaches them.
 # =============================================================
-log "Installing EKS Pod Identity Agent..."
-aws eks create-addon \
-  --cluster-name "$CLUSTER_NAME" \
-  --addon-name eks-pod-identity-agent \
-  --region "$REGION" 2>/dev/null || log "Pod Identity Agent already installed"
-
-aws eks wait addon-active \
-  --cluster-name "$CLUSTER_NAME" \
-  --addon-name eks-pod-identity-agent \
-  --region "$REGION"
-log "Pod Identity Agent ready ✅"
-
-# ── Add Helm repos ──
-log "Adding Helm repos..."
-helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true
-helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
-helm repo add autoscaler https://kubernetes.github.io/autoscaler 2>/dev/null || true
-helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server 2>/dev/null || true
-helm repo add ebs-csi https://kubernetes-sigs.github.io/aws-ebs-csi-driver 2>/dev/null || true
-helm repo update
-
-# ── Get node role and attach policies ──
-log "Attaching policies to node role..."
+log "Attaching IAM policies to node role..."
 NODE_ROLE=$(aws eks describe-nodegroup \
   --cluster-name "$CLUSTER_NAME" \
   --nodegroup-name "${CLUSTER_NAME}-nodes" \
   --query 'nodegroup.nodeRole' \
-  --output text | cut -d'/' -f2)
+  --output text \
+  --region "$REGION" | awk -F'/' '{print $NF}')
 
+log "  Node role: $NODE_ROLE"
+
+# ALB controller policy (created by Terraform)
 aws iam attach-role-policy \
   --role-name "$NODE_ROLE" \
   --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${CLUSTER_NAME}-alb-controller-policy" \
-  2>/dev/null || log "ALB policy already attached"
+  2>/dev/null && log "  Attached ALB controller policy" \
+  || log "  ALB controller policy already attached"
 
+# EBS CSI AWS managed policy
 aws iam attach-role-policy \
   --role-name "$NODE_ROLE" \
   --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy" \
-  2>/dev/null || log "EBS policy already attached"
+  2>/dev/null && log "  Attached EBS CSI policy" \
+  || log "  EBS CSI policy already attached"
 
 log "Node role policies attached ✅"
 
 # =============================================================
-# STEP 4 — ALB Controller
-# =============================================================
-log "Installing ALB Controller..."
-
-# Clean up any previous failed install
-helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || true
-kubectl delete sa aws-load-balancer-controller -n kube-system 2>/dev/null || true
-sleep 5
-
-helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-  -n kube-system \
-  --set clusterName="$CLUSTER_NAME" \
-  --set serviceAccount.create=true \
-  --set region="$REGION" \
-  --set vpcId="$VPC_ID" \
-  --set replicaCount=1 \
-  --wait --timeout=5m
-
-kubectl wait --for=condition=ready pod \
-  -l app.kubernetes.io/name=aws-load-balancer-controller \
-  -n kube-system --timeout=120s
-
-log "ALB Controller ready ✅"
-
-# =============================================================
-# STEP 5 — EBS CSI Driver
-# =============================================================
-log "Installing EBS CSI Driver..."
-
-# Clean up old service account if exists
-kubectl delete sa ebs-csi-controller-sa -n kube-system 2>/dev/null || true
-
-helm upgrade --install aws-ebs-csi-driver ebs-csi/aws-ebs-csi-driver \
-  -n kube-system \
-  --wait --timeout=5m
-
-log "EBS CSI Driver ready ✅"
-
-# =============================================================
-# STEP 6 — Metrics Server
-# =============================================================
-log "Installing Metrics Server..."
-
-helm upgrade --install metrics-server metrics-server/metrics-server \
-  -n kube-system \
-  --wait --timeout=3m
-
-log "Metrics Server ready ✅"
-
-# =============================================================
-# STEP 7 — Cluster Autoscaler
-# =============================================================
-log "Installing Cluster Autoscaler..."
-
-helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
-  -n kube-system \
-  --set autoDiscovery.clusterName="$CLUSTER_NAME" \
-  --set awsRegion="$REGION" \
-  --wait --timeout=5m
-
-log "Cluster Autoscaler ready ✅"
-
-# =============================================================
-# STEP 8 — ArgoCD
-# =============================================================
-log "Installing ArgoCD..."
-
-# Force delete stuck namespace if exists
-kubectl delete namespace argocd --force --grace-period=0 2>/dev/null || true
-sleep 10
-
-kubectl create namespace argocd
-
-helm upgrade --install argocd argo/argo-cd \
-  -n argocd \
-  --set server.service.type=ClusterIP \
-  --set configs.params."server\.insecure"=true \
-  --set server.replicas=1 \
-  --set repoServer.replicas=1 \
-  --wait --timeout=15m
-
-log "ArgoCD ready ✅"
-
-ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret \
-  -o jsonpath="{.data.password}" | base64 -d)
-
-# =============================================================
-# STEP 9 — ArgoCD Ingress
-# =============================================================
-log "Creating ArgoCD Ingress..."
-
-cat <<EOF | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: argocd-ingress
-  namespace: argocd
-  annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/backend-protocol: HTTP
-spec:
-  ingressClassName: alb
-  rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: argocd-server
-                port:
-                  number: 80
-EOF
-
-log "Waiting for ALB DNS (~2 mins)..."
-sleep 60
-
-ARGOCD_URL=""
-for i in {1..10}; do
-  ARGOCD_URL=$(kubectl get ingress argocd-ingress -n argocd \
-    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-  if [ -n "$ARGOCD_URL" ]; then
-    break
-  fi
-  log "Waiting for ALB... attempt $i/10"
-  sleep 15
-done
-
-log "ArgoCD Ingress ready ✅"
-
-# =============================================================
-# SUMMARY
+# DONE
+# Helm charts (ALB controller, EBS CSI, Autoscaler, Metrics
+# Server, ArgoCD) are installed by Terraform via modules/helm.
+# Run: terraform apply  (from infrastructure/envs/dev)
 # =============================================================
 echo ""
 echo "================================================"
 echo "  BOOTSTRAP COMPLETE"
 echo "================================================"
-echo "  ArgoCD UI : http://${ARGOCD_URL:-use port-forward}"
-echo "  Username  : admin"
-echo "  Password  : ${ARGOCD_PASS}"
+echo "  AWS pre-flight config done."
+echo ""
+echo "  Next steps:"
+echo "  1. cd infrastructure/envs/dev"
+echo "  2. terraform apply"
+echo "     → installs ALB controller, EBS CSI, Autoscaler,"
+echo "       Metrics Server, and ArgoCD via Helm"
+echo ""
+echo "  After terraform apply, get ArgoCD credentials:"
+echo "  kubectl -n argocd get secret argocd-initial-admin-secret \\"
+echo "    -o jsonpath='{.data.password}' | base64 -d"
 echo ""
 echo "  Port-forward: kubectl port-forward svc/argocd-server -n argocd 8080:80"
-echo "  Then open  : http://localhost:8080"
-echo ""
-echo "  Next: Merge develop → main for prod deploy"
+echo "  Then open  : http://localhost:8080  (admin / <password above>)"
 echo "================================================"
