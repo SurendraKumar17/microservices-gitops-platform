@@ -1,25 +1,23 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: PLACEHOLDER_APP_NAME
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/SurendraKumar17/microservices-gitops-platform
-    targetRevision: PLACEHOLDER_REVISION
-    path: helm/booking-app
-    helm:
-      valueFiles:
-        - ../../gitops/environments/PLACEHOLDER_ENV/values.yaml
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: PLACEHOLDER_NS
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+global:
+  registry: 635457411372.dkr.ecr.us-east-1.amazonaws.com
+  env: prod
+
+frontend:
+  replicas: 2
+  maxReplicas: 8
+  tag: "will-be-replaced-by-ci"
+
+book:
+  replicas: 2
+  maxReplicas: 8
+  tag: "will-be-replaced-by-ci"
+
+search:
+  replicas: 2
+  maxReplicas: 8
+  tag: "will-be-replaced-by-ci"
+
+user:
+  replicas: 2
+  maxReplicas: 8
+  tag: "will-be-replaced-by-ci"

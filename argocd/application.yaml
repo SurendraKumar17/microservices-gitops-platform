@@ -1,4 +1,3 @@
-# ArgoCD applications for both envs
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -14,10 +13,11 @@ spec:
     path: helm/booking-app
     helm:
       valueFiles:
-        - ../../gitops/environments/dev/values.yaml
+        - values.yaml                        # base defaults from helm/booking-app/values.yaml
+        - ../../gitops/dev/values.yaml       # ← FIXED: was environments/dev, correct is dev
   destination:
     server: https://kubernetes.default.svc
-    namespace: dev
+    namespace: booking-dev                   # ← FIXED: was "dev", too generic
   syncPolicy:
     automated:
       prune: true
@@ -40,10 +40,11 @@ spec:
     path: helm/booking-app
     helm:
       valueFiles:
-        - ../../gitops/environments/dev/values.yaml
+        - values.yaml
+        - ../../gitops/prod/values.yaml      # ← FIXED: was pointing to dev for prod too
   destination:
     server: https://kubernetes.default.svc
-    namespace: prod
+    namespace: booking-prod                  # ← FIXED: was "prod", too generic
   syncPolicy:
     automated:
       prune: true
