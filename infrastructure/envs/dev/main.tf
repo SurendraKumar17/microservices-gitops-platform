@@ -24,6 +24,20 @@ module "eks" {
 }
 
 # ─────────────────────────────────────────
+# RDS — Postgres + Secrets Manager
+# ─────────────────────────────────────────
+module "rds" {
+  source     = "../../modules/rds"
+  depends_on = [module.vpc]
+
+  env        = "dev"
+  project    = "microservices"
+  vpc_id     = module.vpc.vpc_id
+  vpc_cidr   = module.vpc.vpc_cidr
+  subnet_ids = module.vpc.private_subnets
+}
+
+# ─────────────────────────────────────────
 # IAM
 # ─────────────────────────────────────────
 module "iam" {
@@ -98,6 +112,7 @@ module "helm" {
   alb_controller_role_arn     = module.iam.alb_controller_role_arn
   ebs_csi_role_arn            = module.iam.ebs_csi_role_arn
   cluster_autoscaler_role_arn = module.iam.cluster_autoscaler_role_arn
+  external_secrets_role_arn   = module.iam.external_secrets_role_arn
 
   alb_controller_replica_count = 1
   argocd_server_replicas       = 1
