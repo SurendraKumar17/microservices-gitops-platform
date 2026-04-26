@@ -4,16 +4,16 @@ global:
 frontend:
   replicas: 1
   maxReplicas: 2
-  tag: "dev-a988cb0c"
+  tag: "dev-d88570c2"
 book: # ← FIXED: was "reservation"
   replicas: 1
   maxReplicas: 2
-  tag: "dev-a988cb0c"
+  tag: "dev-d88570c2"
 search:
   replicas: 1
   maxReplicas: 2
-  tag: "dev-a988cb0c"
+  tag: "dev-d88570c2"
 user:
   replicas: 1
   maxReplicas: 2
-  tag: "dev-a988cb0c"
+  tag: "dev-d88570c2"
