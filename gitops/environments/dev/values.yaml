@@ -1,19 +1,27 @@
 global:
   registry: 635457411372.dkr.ecr.us-east-1.amazonaws.com
   env: dev
+
 frontend:
   replicas: 1
-  maxReplicas: 2
-  tag: "dev-d88570c2"
-book: # ← FIXED: was "reservation"
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+
+book:
   replicas: 1
-  maxReplicas: 2
-  tag: "dev-d88570c2"
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+
 search:
   replicas: 1
-  maxReplicas: 2
-  tag: "dev-d88570c2"
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+
 user:
   replicas: 1
-  maxReplicas: 2
-  tag: "dev-d88570c2"
+  maxReplicas: 4
+  tag: "will-be-replaced-by-ci"
+
+postgres:
+  host: dev-microservices-postgres.cg9mq6cuoriv.us-east-1.rds.amazonaws.com
+  user: bookinguser
