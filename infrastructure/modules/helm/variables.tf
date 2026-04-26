@@ -85,3 +85,8 @@ variable "argocd_repo_server_replicas" {
   type        = number
   default     = 1
 }
+
+variable "external_secrets_role_arn" {
+  description = "IAM role ARN for External Secrets Operator (created in modules/iam)"
+  type        = string
+}

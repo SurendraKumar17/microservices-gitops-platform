@@ -172,3 +172,26 @@ resource "kubernetes_ingress_v1" "argocd" {
 
   depends_on = [helm_release.argocd]
 }
+
+resource "helm_release" "external_secrets" {
+  name             = "external-secrets"
+  repository       = "https://charts.external-secrets.io"
+  chart            = "external-secrets"
+  namespace        = "external-secrets"
+  create_namespace = true
+  version          = "0.9.11"
+
+  atomic          = true
+  cleanup_on_fail = true
+  wait            = true
+  timeout         = 300
+
+  set = [
+    {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = var.external_secrets_role_arn
+    }
+  ]
+
+  depends_on = [helm_release.argocd]
+}

@@ -188,3 +188,45 @@ resource "aws_iam_role_policy" "cluster_autoscaler" {
     ]
   })
 }
+
+# ────────────────────────────────────────────────
+# IRSA — External Secrets Operator
+# ────────────────────────────────────────────────
+resource "aws_iam_role" "external_secrets" {
+  name = "${var.cluster_name}-external-secrets"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = var.oidc_provider_arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${local.oidc_id}:sub" = "system:serviceaccount:external-secrets:external-secrets"
+          "${local.oidc_id}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy" "external_secrets" {
+  name = "${var.cluster_name}-external-secrets"
+  role = aws_iam_role.external_secrets.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ]
+      Resource = "*"
+    }]
+  })
+}
