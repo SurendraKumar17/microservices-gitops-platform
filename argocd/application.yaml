@@ -13,11 +13,11 @@ spec:
     path: helm/booking-app
     helm:
       valueFiles:
-        - values.yaml                        # base defaults from helm/booking-app/values.yaml
-        - ../../gitops/dev/values.yaml       # ← FIXED: was environments/dev, correct is dev
+        - values.yaml
+        - ../../gitops/environments/dev/values.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: booking-dev                   # ← FIXED: was "dev", too generic
+    namespace: booking-dev
   syncPolicy:
     automated:
       prune: true
@@ -41,10 +41,10 @@ spec:
     helm:
       valueFiles:
         - values.yaml
-        - ../../gitops/prod/values.yaml      # ← FIXED: was pointing to dev for prod too
+        - ../../gitops/environments/prod/values.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: booking-prod                  # ← FIXED: was "prod", too generic
+    namespace: booking-prod
   syncPolicy:
     automated:
       prune: true
