@@ -185,7 +185,7 @@ jobs:
 
       - name: Update GitOps values
         run: |
-          FILE=gitops/$ENV/values.yaml
+          FILE=gitops/environments/$ENV/values.yaml
 
           update() {
             SERVICE=$1
