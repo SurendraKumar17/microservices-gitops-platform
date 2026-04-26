@@ -205,7 +205,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add gitops/$ENV/values.yaml
+          git add gitops/environments/$ENV/values.yaml
           git commit -m "gitops: update $ENV tags to $TAG [skip ci]" || echo "No changes"
           git push
 
