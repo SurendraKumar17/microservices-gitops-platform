@@ -38,6 +38,9 @@ async function initDB() {
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'user' }));
 
+// Readiness check
+app.get('/ready', (req, res) => res.json({ status: 'ready', service: 'user' }));
+
 // Register
 app.post('/api/users/register', async (req, res) => {
   const { email, password, name } = req.body;

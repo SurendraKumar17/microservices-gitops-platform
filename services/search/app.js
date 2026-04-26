@@ -90,6 +90,9 @@ async function initDB() {
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'search' }));
 
+// Readiness check
+app.get('/ready', (req, res) => res.json({ status: 'ready', service: 'search' }));
+
 // Search flights
 app.get('/api/search/flights', async (req, res) => {
   const { from, to, date } = req.query;

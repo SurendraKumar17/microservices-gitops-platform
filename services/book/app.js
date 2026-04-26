@@ -51,6 +51,9 @@ function genRef() {
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'booking' }));
 
+// Readiness check
+app.get('/ready', (req, res) => res.json({ status: 'ready', service: 'book' }));
+
 // Add to cart
 app.post('/api/bookings/cart', async (req, res) => {
   const { type, name, price, session_id } = req.body;
