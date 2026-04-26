@@ -1,14 +1,5 @@
 # =============================================================
 # modules/helm/main.tf
-# Terraform is the single owner of all cluster addon Helm releases.
-# bootstrap.sh does NOT install any of these.
-#
-# Install order (via depends_on):
-#   1. ALB Controller   — needs cluster + IAM role
-#   2. EBS CSI Driver   — needs cluster + IAM role
-#   3. Metrics Server   — needs cluster only
-#   4. Cluster Autoscaler — needs cluster + metrics server
-#   5. ArgoCD           — installed last; takes over app deploys
 # =============================================================
 
 resource "helm_release" "aws_load_balancer_controller" {
@@ -23,30 +14,28 @@ resource "helm_release" "aws_load_balancer_controller" {
   wait            = true
   timeout         = 300
 
-  set {
-    name  = "clusterName"
-    value = var.cluster_name
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = var.alb_controller_role_arn
-  }
-
-  set {
-    name  = "region"
-    value = var.region
-  }
-
-  set {
-    name  = "vpcId"
-    value = var.vpc_id
-  }
-
-  set {
-    name  = "replicaCount"
-    value = var.alb_controller_replica_count
-  }
+  set = [
+    {
+      name  = "clusterName"
+      value = var.cluster_name
+    },
+    {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = var.alb_controller_role_arn
+    },
+    {
+      name  = "region"
+      value = var.region
+    },
+    {
+      name  = "vpcId"
+      value = var.vpc_id
+    },
+    {
+      name  = "replicaCount"
+      value = var.alb_controller_replica_count
+    }
+  ]
 }
 
 resource "helm_release" "ebs_csi_driver" {
@@ -61,10 +50,12 @@ resource "helm_release" "ebs_csi_driver" {
   wait            = true
   timeout         = 300
 
-  set {
-    name  = "controller.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = var.ebs_csi_role_arn
-  }
+  set = [
+    {
+      name  = "controller.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = var.ebs_csi_role_arn
+    }
+  ]
 }
 
 resource "helm_release" "metrics_server" {
@@ -92,20 +83,20 @@ resource "helm_release" "cluster_autoscaler" {
   wait            = true
   timeout         = 300
 
-  set {
-    name  = "autoDiscovery.clusterName"
-    value = var.cluster_name
-  }
-
-  set {
-    name  = "awsRegion"
-    value = var.region
-  }
-
-  set {
-    name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = var.cluster_autoscaler_role_arn
-  }
+  set = [
+    {
+      name  = "autoDiscovery.clusterName"
+      value = var.cluster_name
+    },
+    {
+      name  = "awsRegion"
+      value = var.region
+    },
+    {
+      name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = var.cluster_autoscaler_role_arn
+    }
+  ]
 
   depends_on = [helm_release.metrics_server]
 }
@@ -123,25 +114,24 @@ resource "helm_release" "argocd" {
   wait            = true
   timeout         = 600
 
-  set {
-    name  = "configs.params.server\\.insecure"
-    value = "true"
-  }
-
-  set {
-    name  = "server.service.type"
-    value = "ClusterIP"
-  }
-
-  set {
-    name  = "server.replicas"
-    value = var.argocd_server_replicas
-  }
-
-  set {
-    name  = "repoServer.replicas"
-    value = var.argocd_repo_server_replicas
-  }
+  set = [
+    {
+      name  = "configs.params.server\\.insecure"
+      value = "true"
+    },
+    {
+      name  = "server.service.type"
+      value = "ClusterIP"
+    },
+    {
+      name  = "server.replicas"
+      value = var.argocd_server_replicas
+    },
+    {
+      name  = "repoServer.replicas"
+      value = var.argocd_repo_server_replicas
+    }
+  ]
 
   depends_on = [helm_release.aws_load_balancer_controller]
 }

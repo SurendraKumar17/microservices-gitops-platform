@@ -1,12 +1,12 @@
 global:
-  registry: 635457411372.dkr.ecr.us-east-1.amazonaws.com
-  env: dev
+  registry: ""          # overridden per env
+  env: ""               # overridden per env
 
 frontend:
   replicas: 1
   maxReplicas: 4
   tag: "will-be-replaced-by-ci"
-  roleArn: ""              # add IRSA role ARN if frontend needs AWS access
+  roleArn: ""
 
 book:
   replicas: 1

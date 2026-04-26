@@ -44,7 +44,7 @@ jobs:
 
       - name: Lint Dockerfiles
         run: |
-          for svc in reservation frontend search user; do
+          for svc in book frontend search user; do
             docker run --rm -i hadolint/hadolint < services/$svc/Dockerfile || true
           done
 
@@ -62,10 +62,10 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
-      reservation: ${{ steps.filter.outputs.reservation }}
-      frontend:    ${{ steps.filter.outputs.frontend }}
-      search:      ${{ steps.filter.outputs.search }}
-      user:        ${{ steps.filter.outputs.user }}
+      book:     ${{ steps.filter.outputs.book }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      search:   ${{ steps.filter.outputs.search }}
+      user:     ${{ steps.filter.outputs.user }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,10 +73,10 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            reservation: ['services/reservation/**']
-            frontend:    ['services/frontend/**']
-            search:      ['services/search/**']
-            user:        ['services/user/**']
+            book:     ['services/book/**']
+            frontend: ['services/frontend/**']
+            search:   ['services/search/**']
+            user:     ['services/user/**']
 
   # ─────────────────────────────────────────
   # BUILD & PUSH
@@ -88,7 +88,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [reservation, frontend, search, user]
+        service: [book, frontend, search, user]
 
     steps:
       - uses: actions/checkout@v4
@@ -97,10 +97,10 @@ jobs:
         id: check
         run: |
           case "${{ matrix.service }}" in
-            reservation) echo "changed=${{ needs.detect-changes.outputs.reservation }}" >> $GITHUB_OUTPUT ;;
-            frontend)    echo "changed=${{ needs.detect-changes.outputs.frontend }}"    >> $GITHUB_OUTPUT ;;
-            search)      echo "changed=${{ needs.detect-changes.outputs.search }}"      >> $GITHUB_OUTPUT ;;
-            user)        echo "changed=${{ needs.detect-changes.outputs.user }}"        >> $GITHUB_OUTPUT ;;
+            book)     echo "changed=${{ needs.detect-changes.outputs.book }}"     >> $GITHUB_OUTPUT ;;
+            frontend) echo "changed=${{ needs.detect-changes.outputs.frontend }}" >> $GITHUB_OUTPUT ;;
+            search)   echo "changed=${{ needs.detect-changes.outputs.search }}"   >> $GITHUB_OUTPUT ;;
+            user)     echo "changed=${{ needs.detect-changes.outputs.user }}"     >> $GITHUB_OUTPUT ;;
           esac
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -122,7 +122,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::635457411372:role/github-actions-ecr-role
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
         if: steps.check.outputs.changed == 'true'
@@ -159,7 +159,8 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            -O /usr/local/bin/yq
           sudo chmod +x /usr/local/bin/yq
 
       - name: Set env + tag
@@ -173,14 +174,22 @@ jobs:
             echo "TAG=dev-${SHA}" >> $GITHUB_ENV
           fi
 
+      - name: Add Helm repos
+        run: |
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo add ebs-csi https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+          helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+          helm repo add autoscaler https://kubernetes.github.io/autoscaler
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update
+
       - name: Update GitOps values
         run: |
-          FILE=gitops/environments/$ENV/values.yaml
+          FILE=gitops/$ENV/values.yaml
 
-          update () {
+          update() {
             SERVICE=$1
             CHANGED=$2
-
             if [[ "$CHANGED" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
               echo "Updating $SERVICE → $TAG"
               yq -i ".$SERVICE.tag = \"$TAG\"" $FILE
@@ -188,16 +197,15 @@ jobs:
           }
 
           update frontend "${{ needs.detect-changes.outputs.frontend }}"
-          update reservation "${{ needs.detect-changes.outputs.reservation }}"
-          update search "${{ needs.detect-changes.outputs.search }}"
-          update user "${{ needs.detect-changes.outputs.user }}"
+          update book     "${{ needs.detect-changes.outputs.book }}"
+          update search   "${{ needs.detect-changes.outputs.search }}"
+          update user     "${{ needs.detect-changes.outputs.user }}"
 
       - name: Commit & Push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-
-          git add gitops/environments/$ENV/values.yaml
+          git add gitops/$ENV/values.yaml
           git commit -m "gitops: update $ENV tags to $TAG [skip ci]" || echo "No changes"
           git push
 

@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================
 # bootstrap.sh
-# Run ONCE after terraform apply
-# Purpose: AWS-level pre-flight config only.
-#          Helm chart installs are handled by Terraform (modules/helm).
+# Triggered automatically by Terraform null_resource after
+# EKS + IAM are ready. Env vars passed by null_resource.
 #
 # Does:
-#   1. Fix IMDS hop limit on all EKS nodes
+#   1. Configure kubectl
 #   2. Tag public subnets for ALB discovery
 #   3. Install EKS Pod Identity Agent addon
 #   4. Attach IAM policies to node role
-#   5. Configure kubectl
 #
-# Does NOT: install any Helm charts (Terraform owns those)
+# Does NOT:
+#   - Fix IMDS hop limit (handled by launch template in modules/eks)
+#   - Install any Helm charts (handled by modules/helm)
 # =============================================================
 set -euo pipefail
 
@@ -22,25 +22,19 @@ warn() { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 err()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 # ── Verify required tools ──────────────────────────────────────
-command -v aws       >/dev/null 2>&1 || err "aws cli not installed"
-command -v kubectl   >/dev/null 2>&1 || err "kubectl not installed"
-command -v terraform >/dev/null 2>&1 || err "terraform not installed"
+command -v aws     >/dev/null 2>&1 || err "aws cli not installed"
+command -v kubectl >/dev/null 2>&1 || err "kubectl not installed"
 
-# ── Read Terraform outputs ─────────────────────────────────────
-TERRAFORM_DIR="$(dirname "$0")/../infrastructure/envs/dev"
-log "Reading Terraform outputs from: $TERRAFORM_DIR"
-cd "$TERRAFORM_DIR"
-
-CLUSTER_NAME=$(terraform output -raw cluster_name)
-REGION=$(terraform output -raw region)
-VPC_ID=$(terraform output -raw vpc_id)
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+# ── Validate env vars passed from Terraform null_resource ──────
+: "${CLUSTER_NAME:?must be set}"
+: "${REGION:?must be set}"
+: "${VPC_ID:?must be set}"
+: "${ACCOUNT_ID:?must be set}"
 
 log "Cluster : $CLUSTER_NAME"
 log "Region  : $REGION"
-log "Account : $ACCOUNT_ID"
 log "VPC     : $VPC_ID"
-cd - > /dev/null
+log "Account : $ACCOUNT_ID"
 
 # =============================================================
 # STEP 1 — Configure kubectl
@@ -51,36 +45,8 @@ kubectl get nodes || err "Cannot connect to cluster — check your kubeconfig"
 log "kubectl configured ✅"
 
 # =============================================================
-# STEP 2 — Fix IMDS hop limit on all nodes
-# Why: Default hop limit is 1. Pods need hop limit 2 to reach
-#      the EC2 metadata service for IRSA/IAM credentials.
-# =============================================================
-log "Fixing IMDS hop limit on nodes..."
-INSTANCES=$(aws ec2 describe-instances \
-  --filters \
-    "Name=tag:eks:cluster-name,Values=${CLUSTER_NAME}" \
-    "Name=instance-state-name,Values=running" \
-  --query 'Reservations[*].Instances[*].InstanceId' \
-  --output text \
-  --region "$REGION")
-
-if [ -z "$INSTANCES" ]; then
-  warn "No running instances found for cluster $CLUSTER_NAME — skipping IMDS fix"
-else
-  for instance_id in $INSTANCES; do
-    aws ec2 modify-instance-metadata-options \
-      --instance-id "$instance_id" \
-      --http-put-response-hop-limit 2 \
-      --http-endpoint enabled \
-      --region "$REGION" > /dev/null
-    log "  Fixed IMDS on $instance_id"
-  done
-  log "IMDS hop limit fixed ✅"
-fi
-
-# =============================================================
-# STEP 3 — Tag public subnets for ALB discovery
-# Why: The ALB controller uses these tags to auto-discover
+# STEP 2 — Tag public subnets for ALB discovery
+# Why: ALB controller uses these tags to auto-discover
 #      which subnets to place internet-facing load balancers in.
 # =============================================================
 log "Tagging public subnets for ALB..."
@@ -93,7 +59,7 @@ PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
   --region "$REGION")
 
 if [ -z "$PUBLIC_SUBNETS" ]; then
-  warn "No public subnets found matching '*public*' in VPC $VPC_ID — skipping subnet tagging"
+  warn "No public subnets found matching '*public*' in VPC $VPC_ID — skipping"
 else
   for subnet_id in $PUBLIC_SUBNETS; do
     aws ec2 create-tags \
@@ -102,15 +68,15 @@ else
         "Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared" \
         "Key=kubernetes.io/role/elb,Value=1" \
       --region "$REGION"
-    log "  Tagged subnet $subnet_id"
+    log "  Tagged $subnet_id"
   done
   log "Public subnets tagged ✅"
 fi
 
 # =============================================================
-# STEP 4 — Install EKS Pod Identity Agent addon
-# Why: Required for EKS Pod Identity (the modern replacement
-#      for IRSA) to work. Must be an EKS managed addon.
+# STEP 3 — Install EKS Pod Identity Agent addon
+# Why: Required for EKS Pod Identity to work.
+#      Must be an EKS managed addon.
 # =============================================================
 log "Installing EKS Pod Identity Agent addon..."
 ADDON_STATUS=$(aws eks describe-addon \
@@ -137,8 +103,8 @@ else
 fi
 
 # =============================================================
-# STEP 5 — Attach IAM policies to node role
-# Why: Node IAM role needs these policies so the ALB controller
+# STEP 4 — Attach IAM policies to node role
+# Why: Node IAM role needs these policies so ALB controller
 #      and EBS CSI driver can make AWS API calls from pods.
 #      Terraform creates the policies; this attaches them.
 # =============================================================
@@ -152,14 +118,12 @@ NODE_ROLE=$(aws eks describe-nodegroup \
 
 log "  Node role: $NODE_ROLE"
 
-# ALB controller policy (created by Terraform)
 aws iam attach-role-policy \
   --role-name "$NODE_ROLE" \
   --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${CLUSTER_NAME}-alb-controller-policy" \
   2>/dev/null && log "  Attached ALB controller policy" \
   || log "  ALB controller policy already attached"
 
-# EBS CSI AWS managed policy
 aws iam attach-role-policy \
   --role-name "$NODE_ROLE" \
   --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy" \
@@ -169,27 +133,16 @@ aws iam attach-role-policy \
 log "Node role policies attached ✅"
 
 # =============================================================
-# DONE
-# Helm charts (ALB controller, EBS CSI, Autoscaler, Metrics
-# Server, ArgoCD) are installed by Terraform via modules/helm.
-# Run: terraform apply  (from infrastructure/envs/dev)
+# DONE — Terraform will now proceed to install Helm releases
 # =============================================================
 echo ""
 echo "================================================"
 echo "  BOOTSTRAP COMPLETE"
 echo "================================================"
-echo "  AWS pre-flight config done."
-echo ""
-echo "  Next steps:"
-echo "  1. cd infrastructure/envs/dev"
-echo "  2. terraform apply"
-echo "     → installs ALB controller, EBS CSI, Autoscaler,"
-echo "       Metrics Server, and ArgoCD via Helm"
-echo ""
-echo "  After terraform apply, get ArgoCD credentials:"
-echo "  kubectl -n argocd get secret argocd-initial-admin-secret \\"
-echo "    -o jsonpath='{.data.password}' | base64 -d"
-echo ""
-echo "  Port-forward: kubectl port-forward svc/argocd-server -n argocd 8080:80"
-echo "  Then open  : http://localhost:8080  (admin / <password above>)"
+echo "  Terraform will now install:"
+echo "  → ALB Controller"
+echo "  → EBS CSI Driver"
+echo "  → Metrics Server"
+echo "  → Cluster Autoscaler"
+echo "  → ArgoCD"
 echo "================================================"

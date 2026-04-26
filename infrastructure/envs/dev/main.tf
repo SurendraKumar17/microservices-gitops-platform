@@ -1,33 +1,3 @@
-provider "aws" {
-  region = var.region
-}
-
-# ── Kubernetes & Helm providers ───────────────────────────────
-# Required for helm_release and kubernetes_ingress_v1 resources
-provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
-
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
-  }
-}
-
-provider "helm" {
-  kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
-
-    exec {
-      api_version = "client.authentication.k8s.io/v1beta1"
-      command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
-    }
-  }
-}
-
 # ─────────────────────────────────────────
 # VPC
 # ─────────────────────────────────────────
@@ -89,12 +59,38 @@ resource "aws_eks_access_policy_association" "github_actions" {
 }
 
 # ─────────────────────────────────────────
+# BOOTSTRAP — AWS pre-flight
+# Runs after EKS + IAM, before Helm
+# ─────────────────────────────────────────
+data "aws_caller_identity" "current" {}
+
+resource "null_resource" "bootstrap" {
+  triggers = {
+    cluster_name = module.eks.cluster_name
+  }
+
+provisioner "local-exec" {
+  command     = "bash $(pwd | sed 's|/infrastructure/envs/dev||')/scripts/bootstrap.sh"
+  interpreter = ["bash", "-c"]
+
+  environment = {
+    CLUSTER_NAME = module.eks.cluster_name
+    REGION       = var.region
+    VPC_ID       = module.vpc.vpc_id
+    ACCOUNT_ID   = data.aws_caller_identity.current.account_id
+  }
+}
+
+  depends_on = [module.eks, module.iam]
+}
+
+# ─────────────────────────────────────────
 # HELM — cluster addons + ArgoCD
-# Must come after EKS and IAM are ready
+# Waits for bootstrap to complete
 # ─────────────────────────────────────────
 module "helm" {
   source     = "../../modules/helm"
-  depends_on = [module.eks, module.iam]
+  depends_on = [null_resource.bootstrap]
 
   cluster_name                = module.eks.cluster_name
   region                      = var.region
@@ -103,22 +99,7 @@ module "helm" {
   ebs_csi_role_arn            = module.iam.ebs_csi_role_arn
   cluster_autoscaler_role_arn = module.iam.cluster_autoscaler_role_arn
 
-  # dev — single replicas to save cost
   alb_controller_replica_count = 1
   argocd_server_replicas       = 1
   argocd_repo_server_replicas  = 1
-}
-
-# ─────────────────────────────────────────
-# OUTPUTS
-# ─────────────────────────────────────────
-output "cluster_name"            { value = module.eks.cluster_name }
-output "cluster_endpoint"        { value = module.eks.cluster_endpoint }
-output "region"                  { value = var.region }
-output "vpc_id"                  { value = module.vpc.vpc_id }
-output "alb_controller_role_arn" { value = module.iam.alb_controller_role_arn }
-output "argocd_role_arn"         { value = module.iam.argocd_role_arn }
-output "argocd_url" {
-  description = "ArgoCD ALB URL — available ~2 mins after apply"
-  value       = "http://${module.helm.argocd_hostname}"
 }
