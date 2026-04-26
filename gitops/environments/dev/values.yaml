@@ -4,19 +4,19 @@ global:
 frontend:
   replicas: 1
   maxReplicas: 4
-  tag: "dev-a7ce01c4"
+  tag: "dev-f3089f3b"
 book:
   replicas: 1
   maxReplicas: 4
-  tag: "dev-a7ce01c4"
+  tag: "dev-f3089f3b"
 search:
   replicas: 1
   maxReplicas: 4
-  tag: "dev-a7ce01c4"
+  tag: "dev-f3089f3b"
 user:
   replicas: 1
   maxReplicas: 4
-  tag: "dev-a7ce01c4"
+  tag: "dev-f3089f3b"
 postgres:
   host: dev-microservices-postgres.cg9mq6cuoriv.us-east-1.rds.amazonaws.com
   user: bookinguser
