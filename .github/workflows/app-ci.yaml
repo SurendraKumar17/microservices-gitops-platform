@@ -2,7 +2,11 @@ name: Production GitOps CI
 
 on:
   push:
+<<<<<<< HEAD
     branches: [develop]
+=======
+    branches: [develop] #Temp removed main
+>>>>>>> develop
     paths:
       - 'services/**'
   pull_request:
