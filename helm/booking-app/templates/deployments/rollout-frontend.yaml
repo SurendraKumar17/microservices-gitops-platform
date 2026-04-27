@@ -123,10 +123,13 @@ spec:
       analysis:
         templates:
         - templateName: {{ .Release.Name }}-success-rate
-        startingStep: 1
+        startingStep: 2        # ← start after first pause
+        args:
+        - name: namespace
+          value: {{ .Release.Namespace }}
       steps:
       - setWeight: 10
-      - pause: {duration: 2m}
+      - pause: {duration: 2m}  # ← analysis starts after this
       - setWeight: 50
       - pause: {duration: 2m}
       - setWeight: 100

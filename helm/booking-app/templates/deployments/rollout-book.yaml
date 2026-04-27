@@ -71,15 +71,44 @@ spec:
           periodSeconds: 5
           failureThreshold: 3
           timeoutSeconds: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          failureThreshold: 30
+          periodSeconds: 10
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 5"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1000
+
   strategy:
     canary:
       analysis:
         templates:
         - templateName: {{ .Release.Name }}-success-rate
-        startingStep: 1
+        startingStep: 2        # ← start analysis AFTER first pause, not immediately
+        args:
+        - name: namespace
+          value: {{ .Release.Namespace }}
       steps:
       - setWeight: 10
-      - pause: {duration: 2m}
+      - pause: {duration: 2m}  # ← wait 2 mins for traffic before analysis starts
       - setWeight: 50
       - pause: {duration: 2m}
       - setWeight: 100
