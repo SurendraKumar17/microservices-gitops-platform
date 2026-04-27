@@ -1,42 +1,71 @@
-{{- range $service := list "book" "user" "search" "frontend" }}
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
-  name: {{ $.Release.Name }}-{{ $service }}-hpa
+  name: {{ .Release.Name }}-frontend
   labels:
-    {{- include "booking.labels" $ | nindent 4 }}
+    {{- include "booking.labels" . | nindent 4 }}
 spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: {{ $.Release.Name }}-{{ $service }}
-  minReplicas: {{ index $.Values $service "replicas" }}
-  maxReplicas: {{ index $.Values $service "maxReplicas" }}
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60
-      policies:
-      - type: Pods
-        value: 2
-        periodSeconds: 60
-    scaleDown:
-      stabilizationWindowSeconds: 300   # wait 5mins before scaling down
-      policies:
-      - type: Pods
-        value: 1
-        periodSeconds: 120
-{{- end }}
+  replicas: {{ .Values.frontend.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: {{ .Release.Name }}-frontend
+      containers:
+      - name: frontend
+        image: {{ .Values.global.registry }}/frontend:{{ .Values.frontend.tag }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 3000
+        env:
+        - name: PORT
+          value: "3000"
+        - name: SERVICE_NAME
+          value: "frontend"
+        - name: NODE_ENV
+          value: {{ .Values.global.env }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Release.Name }}-config
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 3
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
+  strategy:
+    canary:
+      steps:
+      - setWeight: 10
+      - pause: {duration: 2m}
+      - setWeight: 50
+      - pause: {duration: 2m}
+      - setWeight: 100

@@ -230,3 +230,13 @@ resource "aws_iam_role_policy" "external_secrets" {
     }]
   })
 }
+
+resource "aws_iam_role_policy_attachment" "node_alb" {
+  role       = var.node_role_name    # ← not aws_iam_role.nodes.name
+  policy_arn = aws_iam_policy.alb_controller.arn
+}
+
+resource "aws_iam_role_policy_attachment" "node_ebs" {
+  role       = var.node_role_name    # ← not aws_iam_role.nodes.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}

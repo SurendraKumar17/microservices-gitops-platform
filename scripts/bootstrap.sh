@@ -102,35 +102,6 @@ else
   log "Pod Identity Agent ready ✅"
 fi
 
-# =============================================================
-# STEP 4 — Attach IAM policies to node role
-# Why: Node IAM role needs these policies so ALB controller
-#      and EBS CSI driver can make AWS API calls from pods.
-#      Terraform creates the policies; this attaches them.
-# =============================================================
-log "Attaching IAM policies to node role..."
-NODE_ROLE=$(aws eks describe-nodegroup \
-  --cluster-name "$CLUSTER_NAME" \
-  --nodegroup-name "${CLUSTER_NAME}-nodes" \
-  --query 'nodegroup.nodeRole' \
-  --output text \
-  --region "$REGION" | awk -F'/' '{print $NF}')
-
-log "  Node role: $NODE_ROLE"
-
-aws iam attach-role-policy \
-  --role-name "$NODE_ROLE" \
-  --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${CLUSTER_NAME}-alb-controller-policy" \
-  2>/dev/null && log "  Attached ALB controller policy" \
-  || log "  ALB controller policy already attached"
-
-aws iam attach-role-policy \
-  --role-name "$NODE_ROLE" \
-  --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy" \
-  2>/dev/null && log "  Attached EBS CSI policy" \
-  || log "  EBS CSI policy already attached"
-
-log "Node role policies attached ✅"
 
 # =============================================================
 # DONE — Terraform will now proceed to install Helm releases

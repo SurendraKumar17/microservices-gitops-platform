@@ -9,3 +9,4 @@ variable "oidc_provider_url" {}
 variable "env"               {}
 variable "project"           { default = "microservices" }
 variable "alb_policy_json"   {}
+variable "node_role_name" {}

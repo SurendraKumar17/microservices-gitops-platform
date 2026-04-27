@@ -195,3 +195,57 @@ resource "helm_release" "external_secrets" {
 
   depends_on = [helm_release.argocd]
 }
+
+resource "helm_release" "argo_rollouts" {
+  name             = "argo-rollouts"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-rollouts"
+  namespace        = "argo-rollouts"
+  create_namespace = true
+  version          = "2.37.7"
+
+  atomic          = true
+  cleanup_on_fail = true
+  wait            = true
+  timeout         = 300
+
+  depends_on = [helm_release.argocd]
+}
+
+# ─────────────────────────────────────────
+# Prometheus Stack
+# ─────────────────────────────────────────
+resource "helm_release" "prometheus_stack" {
+  name             = "prometheus-stack"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  namespace        = "monitoring"
+  create_namespace = true
+  version          = "61.3.2"
+
+  atomic          = true
+  cleanup_on_fail = true
+  wait            = true
+  timeout         = 600
+
+  depends_on = [helm_release.argocd]
+}
+
+# ─────────────────────────────────────────
+# Loki Stack
+# ─────────────────────────────────────────
+resource "helm_release" "loki_stack" {
+  name             = "loki-stack"
+  repository       = "https://grafana.github.io/helm-charts"
+  chart            = "loki-stack"
+  namespace        = "monitoring"
+  create_namespace = true
+  version          = "2.10.2"
+
+  atomic          = false    # ← change to false
+  cleanup_on_fail = true
+  wait            = false    # ← change to false
+  timeout         = 600
+
+  depends_on = [helm_release.prometheus_stack]
+}
