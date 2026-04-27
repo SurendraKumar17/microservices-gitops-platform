@@ -8,6 +8,7 @@ module "vpc" {
   azs     = ["us-east-1a", "us-east-1b"]
   env     = "dev"
   project = "microservices"
+  cluster_name = var.cluster_name
 }
 
 # ─────────────────────────────────────────

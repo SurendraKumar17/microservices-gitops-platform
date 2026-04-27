@@ -215,6 +215,7 @@ resource "helm_release" "argo_rollouts" {
 # ─────────────────────────────────────────
 # Prometheus Stack
 # ─────────────────────────────────────────
+
 resource "helm_release" "prometheus_stack" {
   name             = "prometheus-stack"
   repository       = "https://prometheus-community.github.io/helm-charts"
@@ -228,7 +229,52 @@ resource "helm_release" "prometheus_stack" {
   wait            = true
   timeout         = 600
 
-  depends_on = [helm_release.argocd]
+  values = [<<-EOT
+    grafana:
+      enabled: true
+      adminPassword: "admin123"
+      ingress:
+        enabled: true
+        ingressClassName: alb
+        annotations:
+          alb.ingress.kubernetes.io/scheme: internet-facing
+          alb.ingress.kubernetes.io/target-type: ip
+          alb.ingress.kubernetes.io/backend-protocol: HTTP
+        path: /
+        pathType: Prefix
+    prometheus:
+      enabled: true
+      prometheusSpec:
+        retention: 15d
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: gp2
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 20Gi
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        storage:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: gp2
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 5Gi
+    nodeExporter:
+      enabled: true
+    kubeStateMetrics:
+      enabled: true
+    defaultRules:
+      create: true
+  EOT
+  ]
+
+  depends_on = [helm_release.aws_load_balancer_controller]
 }
 
 # ─────────────────────────────────────────

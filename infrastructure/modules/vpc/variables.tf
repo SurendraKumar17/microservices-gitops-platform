@@ -7,3 +7,7 @@ variable "azs" {
 variable "project" {
   default = "microservices"
 }
+
+variable "cluster_name" {
+  type = string
+}

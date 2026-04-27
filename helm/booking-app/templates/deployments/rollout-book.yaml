@@ -73,6 +73,10 @@ spec:
           timeoutSeconds: 3
   strategy:
     canary:
+      analysis:
+        templates:
+        - templateName: {{ .Release.Name }}-success-rate
+        startingStep: 1
       steps:
       - setWeight: 10
       - pause: {duration: 2m}

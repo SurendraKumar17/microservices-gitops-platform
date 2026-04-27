@@ -13,4 +13,7 @@
   "devDependencies": {
     "nodemon": "^3.0.1"
   }
+  "dependencies": {
+  "prom-client": "^15.1.0"
+  }
 }
